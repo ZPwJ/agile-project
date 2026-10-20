@@ -1,0 +1,42 @@
+jwt:
+    auth:
+        converter:
+            resource-id: ${JWT_AUTH_CONVERTER_RESOURCE_ID:agile-project-server}
+server:
+    error:
+        include-message: always
+    port: 8081
+spring:
+    datasource:
+        driver-class-name: org.postgresql.Driver
+        password: student
+        url: jdbc:postgresql://localhost:5432/agiledb
+        username: appuser
+    jackson:
+        serialization:
+            FAIL_ON_EMPTY_BEANS: false
+    jpa:
+        database-platform: org.hibernate.dialect.PostgreSQLDialect
+        defer-datasource-initialization: true
+        hibernate:
+            ddl-auto: update
+        open-in-view: true
+        properties:
+            hibernate:
+                format_sql: true
+        show-sql: true
+    security:
+        oauth2:
+            resourceserver:
+                jwt:
+                    issuer-uri: ${SECURITY_JWT_ISSUER_URI:http://localhost:8080/realms/agile-project}
+                    jwk-set-uri: ${SECURITY_JWT_JWK_SET_URI:http://localhost:8080/realms/agile-project/protocol/openid-connect/certs}
+    sql:
+        init:
+            mode: always
+            platform: postgres
+springdoc:
+    api-docs:
+        path: /api-docs
+    swagger-ui:
+        path: /swagger-ui

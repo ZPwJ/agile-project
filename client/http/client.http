@@ -1,0 +1,9 @@
+### Get access token
+POST {{serverUrl}}/realms/agile-project/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password
+&client_id={{clientId}}
+&client_secret={{clientSecret}}
+&username={{username}}
+&password= {{password}}

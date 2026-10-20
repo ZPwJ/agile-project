@@ -1,0 +1,71 @@
+{
+  "realm": "agile-project",
+  "enabled": true,
+  "displayName": "Agile Project",
+  "clients": [
+    {
+      "clientId": "agile-project-server",
+      "name": "Agile Project Server",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "agile-project-secret",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "protocol": "openid-connect",
+      "fullScopeAllowed": true,
+      "defaultClientScopes": ["web-origins", "acr", "profile", "roles", "email"],
+      "optionalClientScopes": ["address", "phone", "offline_access", "microprofile-jwt"],
+      "protocolMappers": []
+    }
+  ],
+  "roles": {
+    "client": {
+      "agile-project-server": [
+        { "name": "sm" },
+        { "name": "po" },
+        { "name": "dev" },
+        { "name": "client_user" },
+        { "name": "client_admin" }
+      ]
+    }
+  },
+  "users": [
+    {
+      "username": "admin@agile.local",
+      "email": "admin@agile.local",
+      "firstName": "Admin",
+      "lastName": "User",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin123",
+          "temporary": false
+        }
+      ],
+      "clientRoles": {
+        "agile-project-server": ["sm", "client_user"]
+      }
+    },
+    {
+      "username": "developer@agile.local",
+      "email": "developer@agile.local",
+      "firstName": "Developer",
+      "lastName": "User",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "dev123",
+          "temporary": false
+        }
+      ],
+      "clientRoles": {
+        "agile-project-server": ["dev", "client_user"]
+      }
+    }
+  ]
+}

@@ -8,6 +8,8 @@ import io.github.student.agile.resource.domain.IssueStatus;
 import io.github.student.agile.resource.domain.IssueType;
 import io.github.student.agile.resource.domain.Project;
 import io.github.student.agile.resource.domain.Sprint;
+import io.github.student.agile.resource.domain.SprintIssueEvent;
+import io.github.student.agile.resource.domain.dictionary.SprintIssueEventType;
 import io.github.student.agile.resource.dto.IssueDTO;
 import io.github.student.agile.resource.dto.IssueGeneralDTO;
 import io.github.student.agile.resource.dto.request.IssueMRO;
@@ -19,12 +21,14 @@ import io.github.student.agile.resource.repository.IssueRepository;
 import io.github.student.agile.resource.repository.IssueStatusRepository;
 import io.github.student.agile.resource.repository.IssueTypeRepository;
 import io.github.student.agile.resource.repository.ProjectRepository;
+import io.github.student.agile.resource.repository.SprintIssueEventRepository;
 import io.github.student.agile.resource.repository.SprintRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -60,6 +64,7 @@ public class IssueServiceImpl implements IssueService{
     private final IssueTypeRepository issueTypeRepository;
     private final SprintRepository sprintRepository;
     private final BacklogRepository backlogRepository;
+    private final SprintIssueEventRepository sprintIssueEventRepository;
     private final UserService userService;
     private final IssueDTOMapper issueDTOMapper;
     private final IssueGeneralDTOMapper issueGeneralDTOMapper;
@@ -124,11 +129,17 @@ public class IssueServiceImpl implements IssueService{
                     .orElseThrow(() -> new RuntimeException(ISSUE_PRIORITY_DOES_NOT_EXISTS));
         }
 
+        boolean estimationChanged = !Objects.equals(updated.getEstimation(), issueDTO.getEstimation());
+
         updated.setName(ofNullable(issueDTO.getName()).orElseThrow());
         updated.setDescription(ofNullable(issueDTO.getDescription()).orElseThrow());
         updated.setEstimation(issueDTO.getEstimation());
         updated.setIssuePriority(isNull(priority) ? null : priority);
         issueRepository.save(updated);
+
+        if (estimationChanged) {
+            recordIfInActiveSprint(updated, SprintIssueEventType.ESTIMATION_CHANGED);
+        }
         return issueDTOMapper.map(updated);
     }
 
@@ -153,6 +164,7 @@ public class IssueServiceImpl implements IssueService{
         backlogIssues.remove(issue);
         backlog.setIssues(backlogIssues);
         backlogRepository.save(backlog);
+        recordIfInActiveSprint(issue, SprintIssueEventType.REMOVED);
         issueRepository.deleteById(issueID);
     }
 
@@ -267,6 +279,18 @@ public class IssueServiceImpl implements IssueService{
         }
         updated.setIssueStatus(newStatus);
         issueRepository.save(updated);
+
+        // DONE is terminal in the status flow, so each issue is completed at most once per sprint.
+        if (DONE.getStatusID().equals(newStatus.getId())) {
+            recordIfInActiveSprint(updated, SprintIssueEventType.COMPLETED);
+        }
+    }
+
+    private void recordIfInActiveSprint(Issue issue, SprintIssueEventType type) {
+        Sprint sprint = issue.getSprint();
+        if (!isNull(sprint) && Boolean.TRUE.equals(sprint.getActive())) {
+            sprintIssueEventRepository.save(SprintIssueEvent.of(sprint, issue, type));
+        }
     }
 
     private boolean isStatusChangeFlowCorrect(IssueStatus current, IssueStatus changeRequested) {

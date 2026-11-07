@@ -3,6 +3,18 @@
 Moduł dostarcza raporty sprintów: podsumowanie, velocity, dane do wykresów burndown i burnup,
 porównanie sprintów z filtrowaniem po datach oraz eksport CSV. Prace rozpoczęto 7 listopada 2026 r.
 
+## Podział prac
+
+| Osoba | Zakres | Wymagania |
+|---|---|---|
+| A – Kamil Oleksiak (JasperBTA) | cykl życia sprintu, historia zdarzeń sprintu (#5, #6, #7, #8) | WF-1, WF-2, WF-3, WF-4 (dane) |
+| B | obsługa błędów API, velocity, raport podsumowujący sprint (#10, #11, #12) | WF-1, WF-2, WNF |
+| C | dane do wykresów burndown i burnup (#13, #14) | WF-3, WF-4 |
+| D | porównanie sprintów projektu, filtrowanie po dacie (#15, #16) | WF-5, WF-6 |
+| E | generator i eksport CSV, pomiar pokrycia JaCoCo, testy kontrolerów, instrukcja uruchomienia (#17, #18, #19, #20, #21) | WF-7, WNF |
+
+Wspólnie: reguły obliczeń i kontrakt API (#4), dane demonstracyjne (#9), Pull Request i oddanie projektu (#22).
+
 ## Zmiany w istniejącym kodzie
 
 | Element | Zmiana | Powód |
@@ -83,8 +95,9 @@ Aktualny wynik: 100 testów, pokrycie instrukcji 67,20%. Wymagane minimum to 75%
 
 ## Zrealizowane GitHub Issues
 
-- Zachowanie zakończonego sprintu
-- Blokady zakończonego sprintu
-- Historia zdarzeń sprintu
-- Zapisywanie zdarzeń sprintu
-- Dokumentacja historii sprintu
+| Issue | Tytuł | Osoba |
+|---|---|---|
+| #5 | Zachowanie zakończonego sprintu | A |
+| #6 | Blokady zakończonego sprintu | A |
+| #7 | Historia zdarzeń sprintu | A |
+| #8 | Zapisywanie zdarzeń sprintu | A |

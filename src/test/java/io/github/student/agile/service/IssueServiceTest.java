@@ -21,7 +21,10 @@ import io.github.student.agile.resource.repository.CommentRepository;
 import io.github.student.agile.resource.repository.IssueRepository;
 import io.github.student.agile.resource.repository.IssueStatusRepository;
 import io.github.student.agile.resource.repository.ProjectRepository;
+import io.github.student.agile.resource.repository.SprintIssueEventRepository;
 import io.github.student.agile.resource.repository.SprintRepository;
+import io.github.student.agile.resource.domain.SprintIssueEvent;
+import io.github.student.agile.resource.domain.dictionary.SprintIssueEventType;
 import io.github.student.agile.resource.service.IssueService;
 import io.github.student.agile.resource.service.UserService;
 import jakarta.transaction.Transactional;
@@ -94,6 +97,9 @@ public class IssueServiceTest {
 
     @Autowired
     private CommentRepository commentRepository;
+
+    @Autowired
+    private SprintIssueEventRepository sprintIssueEventRepository;
 
     @MockBean
     private UserService userService;
@@ -507,6 +513,75 @@ public class IssueServiceTest {
     }
 
     @Test
+    public void changeIssueStatus_toDone_recordsCompletedEventTest() {
+
+        //given
+        Sprint sprint = sprintRepository.save(SprintBuilder.createSprintEntity(defaultScrumProject, Boolean.TRUE));
+        Issue issue = issueInSprint(sprint);
+        issue.setIssueStatus(issueStatusRepository.findById(IssueStatusID.IN_TESTS.getStatusID()).orElse(null));
+        issueRepository.save(issue);
+
+        //when
+        issueService.changeIssueStatus(issue.getId(), IssueStatusID.DONE.getStatusID());
+        List<SprintIssueEvent> events = sprintIssueEventRepository.findAllBySprintIDOrderByOccurredAtAscIdAsc(sprint.getId());
+
+        //then
+        assertEquals(1, events.size());
+        assertEquals(SprintIssueEventType.COMPLETED, events.get(0).getType());
+        assertEquals(issue.getEstimation(), events.get(0).getEstimation());
+    }
+
+    @Test
+    public void updateIssue_activeSprint_recordsEstimationChangeTest() {
+
+        //given
+        Sprint sprint = sprintRepository.save(SprintBuilder.createSprintEntity(defaultScrumProject, Boolean.TRUE));
+        Issue issue = issueInSprint(sprint);
+
+        //when
+        issueService.updateIssue(updateRequest(issue, OTHER_ISSUE_ESTIMATION));
+        List<SprintIssueEvent> events = sprintIssueEventRepository.findAllBySprintIDOrderByOccurredAtAscIdAsc(sprint.getId());
+
+        //then
+        assertEquals(1, events.size());
+        assertEquals(SprintIssueEventType.ESTIMATION_CHANGED, events.get(0).getType());
+        assertEquals(OTHER_ISSUE_ESTIMATION, events.get(0).getEstimation());
+    }
+
+    @Test
+    public void updateIssue_sameEstimation_recordsNoEventTest() {
+
+        //given
+        Sprint sprint = sprintRepository.save(SprintBuilder.createSprintEntity(defaultScrumProject, Boolean.TRUE));
+        Issue issue = issueInSprint(sprint);
+
+        //when
+        issueService.updateIssue(updateRequest(issue, issue.getEstimation()));
+
+        //then
+        assertEquals(0, sprintIssueEventRepository.findAllBySprintIDOrderByOccurredAtAscIdAsc(sprint.getId()).size());
+    }
+
+    @Test
+    public void deleteIssue_activeSprint_recordsRemovedEventTest() {
+
+        //given
+        Sprint sprint = sprintRepository.save(SprintBuilder.createSprintEntity(defaultScrumProject, Boolean.TRUE));
+        Issue issue = issueInSprint(sprint);
+        issue.setProjectID(defaultScrumProject.getId());
+        issueRepository.save(issue);
+
+        //when
+        issueService.deleteIssue(issue.getId());
+        List<SprintIssueEvent> events = sprintIssueEventRepository.findAllBySprintIDOrderByOccurredAtAscIdAsc(sprint.getId());
+
+        //then
+        assertEquals(1, events.size());
+        assertEquals(SprintIssueEventType.REMOVED, events.get(0).getType());
+        assertEquals(issue.getId(), events.get(0).getIssueID());
+    }
+
+    @Test
     public void changeIssueStatus_throwsIssueDoesNotExistsExceptionTest() {
 
         //given
@@ -709,5 +784,20 @@ public class IssueServiceTest {
         issueRepository.save(issueWithComment);
 
         return issueWithComment;
+    }
+
+    private Issue issueInSprint(Sprint sprint) {
+        Issue issue = createIssueEntity();
+        issue.setSprint(sprint);
+        return issueRepository.save(issue);
+    }
+
+    private IssueMRO updateRequest(Issue issue, Integer estimation) {
+        return IssueMRO.builder()
+                .issueID(issue.getId())
+                .name(OTHER_ISSUE_NAME)
+                .description(OTHER_ISSUE_DESCRIPTION)
+                .estimation(estimation)
+                .build();
     }
 }

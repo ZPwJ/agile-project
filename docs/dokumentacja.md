@@ -8,7 +8,7 @@ porównanie sprintów z filtrowaniem po datach oraz eksport CSV. Prace rozpoczę
 | Osoba | Zakres | Wymagania |
 |---|---|---|
 | A – Kamil Oleksiak (JasperBTA) | cykl życia sprintu, historia zdarzeń sprintu (#5, #6, #7, #8) | WF-1, WF-2, WF-3, WF-4 (dane) |
-| B | obsługa błędów API, velocity, raport podsumowujący sprint (#10, #11, #12) | WF-1, WF-2, WNF |
+| B - Jakub Sawicki (JakubSawicki03) | obsługa błędów API, velocity, raport podsumowujący sprint (#10, #11, #12) | WF-1, WF-2, WNF |
 | C | dane do wykresów burndown i burnup (#13, #14) | WF-3, WF-4 |
 | D | porównanie sprintów projektu, filtrowanie po dacie (#15, #16) | WF-5, WF-6 |
 | E | generator i eksport CSV, pomiar pokrycia JaCoCo, testy kontrolerów, instrukcja uruchomienia (#17, #18, #19, #20, #21) | WF-7, WNF |

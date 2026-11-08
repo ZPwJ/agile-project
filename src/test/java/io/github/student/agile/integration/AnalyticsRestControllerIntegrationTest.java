@@ -29,7 +29,11 @@ import static io.github.student.agile.builder.ProjectBuilder.createProjectEntity
 import static io.github.student.agile.builder.SprintBuilder.SPRINT_NAME;
 import static io.github.student.agile.builder.SprintBuilder.createSprintEntity;
 import static io.github.student.agile.builder.UserBuilder.createCurrentLoggedInUser;
+import static io.github.student.agile.exception.dictionary.ExceptionMessages.SPRINT_ALREADY_FINISHED;
+import static io.github.student.agile.exception.dictionary.ExceptionMessages.SPRINT_DOES_NOT_EXISTS;
 import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.TO_DO;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.mockito.Mockito.when;
@@ -113,13 +117,42 @@ public class AnalyticsRestControllerIntegrationTest {
     public void getSprintReport_notExistingSprint_returns404() throws Exception {
 
         mvc.perform(get(ANALYTICS_BASE_URL + "/sprints/{id}/report", -1))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.status", is(404)))
+                .andExpect(jsonPath("$.error", is("Not Found")))
+                .andExpect(jsonPath("$.message", is(SPRINT_DOES_NOT_EXISTS)))
+                .andExpect(jsonPath("$.path", is(ANALYTICS_BASE_URL + "/sprints/-1/report")));
     }
 
     @Test
     public void getSprintReport_nonNumericSprintID_returns400() throws Exception {
 
         mvc.perform(get(ANALYTICS_BASE_URL + "/sprints/{id}/report", "abc"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status", is(400)))
+                .andExpect(jsonPath("$.message", is("Invalid value 'abc' for parameter 'sprintID'")));
+    }
+
+    @Test
+    public void addIssueToFinishedSprint_returns409() throws Exception {
+
+        Sprint sprint = sprintRepository.save(createSprintEntity(project, Boolean.FALSE));
+        sprint.setIsDone(Boolean.TRUE);
+        Issue issue = createIssueEntity();
+        issue.setIssueStatus(issueStatusRepository.findById(TO_DO.getStatusID()).orElseThrow());
+        issueRepository.save(issue);
+
+        mvc.perform(post("/api/sprint/{sprintID}/issue/{issueID}", sprint.getId(), issue.getId()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.status", is(409)))
+                .andExpect(jsonPath("$.message", is(SPRINT_ALREADY_FINISHED)));
+    }
+
+    @Test
+    public void startNotExistingSprint_returns404() throws Exception {
+
+        mvc.perform(patch("/api/sprint/start/{id}", -1))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message", is(SPRINT_DOES_NOT_EXISTS)));
     }
 }

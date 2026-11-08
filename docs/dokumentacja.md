@@ -52,7 +52,14 @@ Zestawienie obejmuje zakończone sprinty, których okres trwania nachodzi na prz
 Jednostką są story points (`Issue.estimation`). Zadanie jest ukończone, gdy ma status `DONE`.
 
 - **Velocity**: suma estymacji ze zdarzeń `COMPLETED`, czyli z chwili ukończenia zadania.
-  Zadanie usunięte ze sprintu po ukończeniu nie jest wliczane.
+  Zadanie usunięte ze sprintu po ukończeniu nie jest wliczane. Zmiana estymacji po ukończeniu
+  zadania nie zmienia velocity, bo raport używa zapisanej historii, a nie aktualnej estymacji.
+  Ograniczenie: dla sprintu bez historii (`historyAvailable = false`) używane są aktualne estymacje.
+- **Raport sprintu** (WF-1): stan sprintu jest odtwarzany przez przejście zdarzeń w kolejności chronologicznej,
+  bo zakończenie sprintu odpina od niego zadania. Liczba początkowa to liczba zdarzeń `SCOPE_AT_START`.
+  Ukończone i nieukończone to zadania, które po ostatnim zdarzeniu nadal należą do sprintu.
+  Suma nieukończonych używa ostatniej znanej estymacji. Sprint bez historii (`startedAt` puste:
+  nierozpoczęty albo rozpoczęty przed wdrożeniem modułu) jest liczony z bieżących zadań i ich statusu.
 - **Burndown**: dla każdego dnia sprintu pozostała praca, czyli zakres początkowy (`SCOPE_AT_START`)
   minus praca ukończona do końca dnia. Wartości nie spadają poniżej zera.
 - **Burnup**: dla każdego dnia narastająca suma ukończonej pracy oraz całkowity zakres,
@@ -67,6 +74,45 @@ Dni liczone są w strefie `Europe/Warsaw`.
   Widać je na wykresie burnup jako zmianę linii zakresu; burndown liczony jest od zakresu początkowego.
 - **Brak historii**: zdarzenia zapisywane są od wdrożenia modułu. Sprint rozpoczęty wcześniej nie ma `startedAt`
   ani zdarzeń, więc wykresy zwracają dla niego pustą listę punktów zamiast niepełnych danych.
+
+## Raport sprintu i velocity — stan realizacji (osoba B)
+
+Zrobione: WF-1 (#12) i WF-2 (#11). Endpoint `GET /api/analytics/sprints/{sprintID}/report`
+w `AnalyticsRestController` zwraca 200, 404 dla nieistniejącego sprintu i 400 dla nienumerycznego id.
+
+```json
+{ "sprintID": 7, "sprintName": "Sprint 3", "projectID": 1, "state": "FINISHED",
+  "plannedStartDate": "2026-11-02T08:00:00Z", "startedAt": "2026-11-02T08:05:00Z", "endedAt": "2026-11-09T16:00:00Z",
+  "historyAvailable": true, "initialIssueCount": 4, "completedIssueCount": 2, "uncompletedIssueCount": 2,
+  "velocity": 5, "uncompletedEstimation": 3, "estimationUnit": "STORY_POINTS" }
+```
+
+`state` to `PLANNED`, `ACTIVE` albo `FINISHED`. Daty są w ISO-8601 (UTC).
+
+| Klasa | Pakiet | Rola |
+|---|---|---|
+| `SprintMetricsCalculator` | `resource.service.analytics` | jedyne miejsce liczenia metryk sprintu, w tym velocity |
+| `SprintMetrics` | `resource.service.analytics` | wynik: `historyAvailable`, `initialIssueCount`, `completedIssueCount`, `uncompletedIssueCount`, `velocity`, `uncompletedEstimation` |
+| `SprintIssueStates` | `resource.service.analytics` | odtworzenie końcowego stanu zadań sprintu ze zdarzeń |
+| `SprintReportService(Impl)` | `resource.service` | raport WF-1 |
+| `SprintReportDTO`, `SprintState` | `resource.dto.analytics` | odpowiedź API |
+| `ResourceNotFoundException` | `exception.definition` | wyjątek mapowany na HTTP 404 |
+
+### Wskazówki dla osoby D (WF-5, WF-6, WF-7)
+
+- **Nie licz velocity ani liczby zadań samodzielnie.** Dla każdego sprintu wywołaj
+  `sprintMetricsCalculator.calculate(sprint, events)` i weź pola `completedIssueCount`,
+  `uncompletedIssueCount` i `velocity`. Dzięki temu porównanie, CSV i raport sprintu zawsze dają te same liczby.
+- `calculate` nie odpytuje bazy. `events` to zdarzenia **tylko tego sprintu**, w kolejności chronologicznej.
+  Dla sprintu bez historii (`hasHistory(sprint) == false`) przekaż `List.of()`, a wynik zostanie policzony z bieżących zadań.
+- **WNF-5:** nie pobieraj zdarzeń osobno dla każdego sprintu. Dodaj do `SprintIssueEventRepository` metodę
+  `findAllBySprintIDInOrderByOccurredAtAscIdAsc(Collection<Integer> sprintIDs)`, pobierz zdarzenia jednym zapytaniem
+  i pogrupuj je `groupingBy(SprintIssueEvent::getSprintID)`. Grupowanie zachowuje kolejność.
+- Nieistniejący projekt: rzuć `new ResourceNotFoundException(PROJECT_DOES_NOT_EXISTS)`, a endpoint zwróci 404.
+  Spójną strukturę JSON błędów (w tym 400 dla złego przedziału dat) dodaje osoba B w ramach WNF (#10).
+- Testy wzorcowe: `SprintMetricsCalculatorTest` (jednostkowe, bez Springa), `SprintReportServiceTest`
+  (pełny cykl start → zmiany statusów → stop) i `AnalyticsRestControllerIntegrationTest` (MockMvc).
+  Nowe endpointy dodawaj do `AnalyticsRestController`.
 
 ## Uruchomienie
 

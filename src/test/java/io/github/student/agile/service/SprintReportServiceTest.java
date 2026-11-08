@@ -182,6 +182,41 @@ public class SprintReportServiceTest {
     }
 
     @Test
+    public void getSprintReport_sprintWithoutIssues_hasZeroVelocity() {
+
+        //given
+        Sprint sprint = sprintRepository.save(createSprintEntity(project, FALSE));
+
+        //when
+        SprintReportDTO report = sprintReportService.getSprintReport(sprint.getId());
+
+        //then
+        assertEquals(0, report.getInitialIssueCount());
+        assertEquals(0, report.getCompletedIssueCount());
+        assertEquals(0, report.getUncompletedIssueCount());
+        assertEquals(0, report.getVelocity());
+        assertEquals(0, report.getUncompletedEstimation());
+    }
+
+    @Test
+    public void getSprintReport_estimationChangedAfterCompletion_keepsVelocity() {
+
+        //given
+        Sprint sprint = sprintRepository.save(createSprintEntity(project, FALSE));
+        Issue issue = addIssue(sprint, 5);
+        sprintService.startSprint(sprint.getId());
+        complete(issue);
+        changeEstimation(issue, 21);
+        sprintService.stopSprint(project.getId());
+
+        //when
+        SprintReportDTO report = sprintReportService.getSprintReport(sprint.getId());
+
+        //then
+        assertEquals(5, report.getVelocity());
+    }
+
+    @Test
     public void getSprintReport_sprintFinishedWithoutHistory_returnsZeros() {
 
         //given: sprint finished before the analytics module recorded any events

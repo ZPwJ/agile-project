@@ -24,6 +24,7 @@ Wspólnie: reguły obliczeń i kontrakt API (#4), dane demonstracyjne (#9), Pull
 | `SprintServiceImpl` | zakończonego sprintu nie można ponownie rozpocząć, usunąć ani dodać do niego zadań; do sprintu nie można dodać zadania `DONE` | zamknięty sprint jest danymi historycznymi |
 | `SprintServiceImpl`, `IssueServiceImpl` | zapis zdarzeń przy starcie sprintu, dodaniu i usunięciu zadania, zmianie estymacji i ukończeniu zadania | bez historii nie da się odtworzyć przebiegu sprintu |
 | `ExceptionMessages` | komunikaty `SPRINT_ALREADY_FINISHED`, `ISSUE_ALREADY_DONE` | nowe blokady |
+| serwisy `*ServiceImpl` | `new RuntimeException(...)` zastąpione typowanymi wyjątkami z `exception.definition`; komunikaty bez zmian | wcześniej każdy błąd biznesowy kończył się HTTP 500; typowane wyjątki dziedziczą po `RuntimeException`, więc istniejące testy działają bez zmian |
 
 ## Nowe elementy
 
@@ -34,18 +35,42 @@ Wspólnie: reguły obliczeń i kontrakt API (#4), dane demonstracyjne (#9), Pull
 - **Repozytorium `SprintIssueEventRepository`**: zdarzenia sprintu w kolejności chronologicznej.
 - **Migracje**: projekt nie używa narzędzia do migracji. Schemat aktualizuje Hibernate (`ddl-auto: update`),
   więc nowa tabela i kolumny powstają przy starcie aplikacji.
-- **Endpointy** (w trakcie realizacji):
+- **Endpointy** (`AnalyticsRestController`):
 
-| Metoda | Ścieżka | Wymaganie |
-|---|---|---|
-| GET | `/api/analytics/sprints/{id}/report` | WF-1, WF-2 |
-| GET | `/api/analytics/sprints/{id}/burndown` | WF-3 |
-| GET | `/api/analytics/sprints/{id}/burnup` | WF-4 |
-| GET | `/api/analytics/projects/{id}/sprints?from=&to=` | WF-5, WF-6 |
-| GET | `/api/analytics/projects/{id}/sprints/export.csv?from=&to=` | WF-7 |
+| Metoda | Ścieżka | Wymaganie | Status |
+|---|---|---|---|
+| GET | `/api/analytics/sprints/{id}/report` | WF-1, WF-2 | gotowe |
+| GET | `/api/analytics/sprints/{id}/burndown` | WF-3 | w realizacji |
+| GET | `/api/analytics/sprints/{id}/burnup` | WF-4 | w realizacji |
+| GET | `/api/analytics/projects/{id}/sprints?from=&to=` | WF-5, WF-6 | w realizacji |
+| GET | `/api/analytics/projects/{id}/sprints/export.csv?from=&to=` | WF-7 | w realizacji |
 
 Zestawienie obejmuje zakończone sprinty, których okres trwania nachodzi na przedział `from`–`to`.
 `from` późniejsze niż `to` zwraca 400, nieistniejący sprint lub projekt 404, zmiana zakończonego sprintu 409.
+
+## Obsługa błędów API
+
+Wszystkie endpointy zwracają błędy w jednej strukturze JSON (`ApiErrorDTO`). Nazwy pól są zgodne
+z domyślną odpowiedzią Spring Boota, więc błędy spoza kontrolerów (np. 401 z filtra bezpieczeństwa) wyglądają tak samo.
+Stos wywołań nigdy nie trafia do klienta.
+
+```json
+{ "timestamp": "2026-11-08T08:59:17.163Z", "status": 404, "error": "Not Found",
+  "message": "Sprint with given ID does not exists", "path": "/api/analytics/sprints/-1/report" }
+```
+
+| Wyjątek (`exception.definition`) / przyczyna | HTTP | Przykład |
+|---|---|---|
+| `ResourceNotFoundException` | 404 | nieistniejący sprint, projekt, zadanie, komentarz, status |
+| `BusinessRuleException` | 409 | zmiana zakończonego sprintu, drugi aktywny sprint, niedozwolona zmiana statusu, nieunikalna nazwa |
+| `ForbiddenOperationException`, brak roli w `@PreAuthorize` | 403 | edycja cudzego komentarza |
+| `InvalidRequestException`, `IllegalArgumentException` (w tym `NullIdentifierException`) | 400 | `from` późniejsze niż `to`, brak identyfikatora |
+| nieprawidłowy typ parametru, niepoprawny JSON, brak wymaganego parametru | 400 | `/sprints/abc/report` |
+| nieobsługiwana metoda HTTP | 405 | `POST` na endpoint `GET` |
+| każdy inny wyjątek | 500 | komunikat `Unexpected server error`, szczegóły tylko w logu serwera |
+
+Handler: `resource.controller.ApiExceptionHandler`. Nowy kod powinien rzucać jeden z powyższych wyjątków,
+a nie `RuntimeException`, która zwróciłaby 500.
 
 ## Sposób liczenia metryk
 
@@ -108,8 +133,9 @@ w `AnalyticsRestController` zwraca 200, 404 dla nieistniejącego sprintu i 400 d
 - **WNF-5:** nie pobieraj zdarzeń osobno dla każdego sprintu. Dodaj do `SprintIssueEventRepository` metodę
   `findAllBySprintIDInOrderByOccurredAtAscIdAsc(Collection<Integer> sprintIDs)`, pobierz zdarzenia jednym zapytaniem
   i pogrupuj je `groupingBy(SprintIssueEvent::getSprintID)`. Grupowanie zachowuje kolejność.
-- Nieistniejący projekt: rzuć `new ResourceNotFoundException(PROJECT_DOES_NOT_EXISTS)`, a endpoint zwróci 404.
-  Spójną strukturę JSON błędów (w tym 400 dla złego przedziału dat) dodaje osoba B w ramach WNF (#10).
+- Nieistniejący projekt: rzuć `new ResourceNotFoundException(PROJECT_DOES_NOT_EXISTS)` (404).
+  Zły przedział dat: rzuć `new InvalidRequestException(...)` (400). Treść błędu zbuduje `ApiExceptionHandler`
+  (patrz sekcja „Obsługa błędów API”).
 - Testy wzorcowe: `SprintMetricsCalculatorTest` (jednostkowe, bez Springa), `SprintReportServiceTest`
   (pełny cykl start → zmiany statusów → stop) i `AnalyticsRestControllerIntegrationTest` (MockMvc).
   Nowe endpointy dodawaj do `AnalyticsRestController`.
@@ -137,7 +163,9 @@ mvn verify
 ```
 
 Raport JaCoCo powstaje w `target/site/jacoco/index.html`.
-Aktualny wynik: 100 testów, pokrycie instrukcji 67,20%. Wymagane minimum to 75%.
+Aktualny wynik (8 listopada 2026 r., po WF-1, WF-2 i obsłudze błędów): 144 testy, wszystkie przechodzą,
+pokrycie instrukcji 71,94% (2713 z 3771). Wymagane minimum to 75%.
+Raport obejmuje cały kod produkcyjny, bez wykluczeń. Nowy kod raportu sprintu, velocity i obsługi błędów ma pokrycie 98,9%.
 
 ## Zrealizowane GitHub Issues
 
@@ -147,3 +175,6 @@ Aktualny wynik: 100 testów, pokrycie instrukcji 67,20%. Wymagane minimum to 75%
 | #6 | Blokady zakończonego sprintu | A |
 | #7 | Historia zdarzeń sprintu | A |
 | #8 | Zapisywanie zdarzeń sprintu | A |
+| #10 | Obsługa błędów API | B |
+| #11 | Obliczanie velocity | B |
+| #12 | Raport podsumowujący sprint | B |

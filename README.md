@@ -30,6 +30,8 @@
 
 Agile Project provides a centralized workspace for managing Scrum projects, from maintaining the product backlog to tracking sprint execution.
 
+Sprint report assumptions (in Polish): [docs/sprint-analytics.md](docs/sprint-analytics.md).
+
 The application separates business API responsibilities from authentication and authorization, using dedicated services and PostgreSQL databases for application and identity data.
 
 ## Features

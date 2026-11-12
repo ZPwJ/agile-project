@@ -44,3 +44,7 @@ Nie uzupełniamy brakujących danych. Jeśli sprint nie ma wpisu z chwili startu
 - Porównanie sprintów i CSV obejmują tylko zakończone sprinty danego projektu, od najstarszego (po dacie zakończenia, potem po ID).
 - Nieistniejący projekt: 404. Brak wyników: pusta lista, a w CSV sam nagłówek.
 - Raport dla trwającego sprintu albo sprintu bez zapisanego wyniku: 409.
+
+## Zmiany w bazie
+
+Projekt ma ustawione `spring.jpa.hibernate.ddl-auto=update`, więc Hibernate przy starcie sam dodaje kolumnę `sprint.end_date` i tabelę `sprint_progress` (z sekwencją i indeksem). Nie trzeba ręcznie uruchamiać żadnego SQL. Istniejące dane zostają bez zmian, starsze sprinty mają po prostu `end_date = null`.

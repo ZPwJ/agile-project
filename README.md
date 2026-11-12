@@ -226,3 +226,7 @@ mvn verify
 ```
 
 Tests run on an in-memory H2 database, so Docker and `.env` are not needed. The JaCoCo report is generated in `target/site/jacoco/index.html`.
+
+## Dictionaries
+
+When running on PostgreSQL, Spring executes `src/main/resources/data-postgres.sql` on startup. It inserts the issue statuses, types and priorities. Rows that already exist are skipped (`ON CONFLICT DO NOTHING`), so restarting the app doesn't duplicate or overwrite anything.

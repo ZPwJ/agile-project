@@ -39,6 +39,8 @@ public class Sprint extends Auditable implements Serializable {
 
     private ZonedDateTime startDate;
 
+    private ZonedDateTime endDate;
+
     @ManyToOne
     @JoinColumn(name = "ProjectID", nullable = false)
     private Project project;

@@ -4,6 +4,7 @@ import io.github.student.agile.exception.definition.NullIdentifierException;
 import io.github.student.agile.resource.domain.Issue;
 import io.github.student.agile.resource.domain.Project;
 import io.github.student.agile.resource.domain.Sprint;
+import io.github.student.agile.resource.domain.SprintProgress;
 import io.github.student.agile.resource.dto.SprintDTO;
 import io.github.student.agile.resource.mapper.SprintDTOMapper;
 import io.github.student.agile.resource.repository.IssueRepository;
@@ -16,6 +17,8 @@ import org.apache.commons.lang3.tuple.Pair;
 import org.springframework.stereotype.Service;
 
 import java.time.ZonedDateTime;
+import java.time.ZoneOffset;
+import java.util.Objects;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -36,7 +39,6 @@ import static io.github.student.agile.exception.dictionary.ExceptionMessages.SPR
 import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.DONE;
 import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.TO_DO;
 import static io.github.student.agile.utils.DateUtils.reduceTimeFromZonedDateTime;
-import static io.github.student.agile.utils.collection.CollectionsUtils.splitSetIntoTwoSubSets;
 import static java.lang.Boolean.FALSE;
 import static java.lang.Boolean.TRUE;
 import static java.util.Objects.isNull;
@@ -54,6 +56,7 @@ public class SprintServiceImpl implements SprintService {
     private final ProjectRepository projectRepository;
     private final IssueStatusRepository issueStatusRepository;
     private final SprintDTOMapper sprintDTOMapper;
+    private final SprintProgressService progressService;
 
     @Override
     public SprintDTO getActiveSprint(Integer projectID) {
@@ -116,6 +119,15 @@ public class SprintServiceImpl implements SprintService {
         Sprint updated = sprintRepository.findById(sprintDTO.getId())
                 .orElseThrow(() -> new RuntimeException(SPRINT_DOES_NOT_EXISTS));
 
+        requireOpen(updated);
+        if (!Objects.equals(updated.getProject().getId(), project.getId())) {
+            throw new IllegalArgumentException("Sprint project cannot be changed");
+        }
+        if (Boolean.TRUE.equals(updated.getActive())
+                && !Objects.equals(updated.getStartDate(), sprintDTO.getStartTime())) {
+            throw new IllegalStateException("Started sprint date cannot be changed");
+        }
+
         if (!updated.getName().equals(sprintDTO.getName())) {
             if (sprintRepository.existsByNameAndProject(sprintDTO.getName(), project)) {
                 throw new RuntimeException(SPRINT_NAME_NOT_UNIQUE);
@@ -135,6 +147,11 @@ public class SprintServiceImpl implements SprintService {
 
         Sprint sprintToBeDeleted = sprintRepository.findById(sprintID)
                 .orElseThrow(() -> new RuntimeException(SPRINT_DOES_NOT_EXISTS));
+
+        requireOpen(sprintToBeDeleted);
+        if (Boolean.TRUE.equals(sprintToBeDeleted.getActive())) {
+            throw new IllegalStateException("Started sprint cannot be deleted");
+        }
 
         if (!sprintToBeDeleted.getSprintIssues().isEmpty()) {
             List<Issue> issues = issueRepository.findAllBySprint(sprintToBeDeleted)
@@ -161,6 +178,11 @@ public class SprintServiceImpl implements SprintService {
             throw new RuntimeException(ISSUE_ALREADY_HAS_SPRINT);
         }
 
+        requireOpen(sprint);
+        if (!Objects.equals(issue.getProjectID(), sprint.getProject().getId())) {
+            throw new IllegalArgumentException("Issue and sprint must belong to the same project");
+        }
+
         Set<Issue> sprintIssues;
         if (isNull(sprint.getSprintIssues())) {
             sprintIssues = new HashSet<>(List.of(issue));
@@ -183,6 +205,11 @@ public class SprintServiceImpl implements SprintService {
         Issue issue = issueRepository.findById(issueID)
                 .orElseThrow(() -> new RuntimeException(ISSUE_DOES_NOT_EXISTS));
 
+        requireOpen(sprint);
+        if (issue.getSprint() == null || !Objects.equals(issue.getSprint().getId(), sprintID)) {
+            throw new IllegalStateException("Issue does not belong to this sprint");
+        }
+
         Set<Issue> sprintIssues = sprint.getSprintIssues();
         sprintIssues.remove(issue);
         sprint.setSprintIssues(sprintIssues);
@@ -198,6 +225,7 @@ public class SprintServiceImpl implements SprintService {
         Sprint updated = sprintRepository.findById(ofNullable(sprintID).orElseThrow(NullIdentifierException::new))
                 .orElseThrow(() -> new IllegalArgumentException(SPRINT_DOES_NOT_EXISTS));
 
+        requireOpen(updated);
         if(sprintRepository.findByActiveAndProject(TRUE, updated.getProject()).isPresent()) {
             throw new RuntimeException(ACTIVE_SPRINT_EXISTS);
         }
@@ -211,12 +239,11 @@ public class SprintServiceImpl implements SprintService {
             throw new RuntimeException(validationResult.getValue());
         }
 
-        if (isNull(updated.getStartDate())) {
-            updated.setStartDate(ZonedDateTime.now());
-        }
+        updated.setStartDate(ZonedDateTime.now(ZoneOffset.UTC));
 
         updated.setActive(TRUE);
         sprintRepository.save(updated);
+        progressService.record(updated, SprintProgress.Kind.START);
     }
 
     @Override
@@ -228,28 +255,28 @@ public class SprintServiceImpl implements SprintService {
         Sprint updated = sprintRepository.findByActiveAndProject(TRUE, project)
                 .orElseThrow(() -> new RuntimeException(NO_ACTIVE_SPRINT_IN_PROJECT));
 
-        Pair<Set<Issue>, Set<Issue>> dividedSet = splitSetIntoTwoSubSets(updated.getSprintIssues(), issue -> issue.getIssueStatus().getId().equals(DONE.getStatusID()));
-        Set<Issue> doneIssues = dividedSet.getKey();
-        Set<Issue> uncompletedIssues = dividedSet.getValue();
-
-        doneIssues.forEach(issue -> {
+        updated.setEndDate(ZonedDateTime.now(ZoneOffset.UTC));
+        // Capture the outcome before unfinished issues are reset and detached.
+        progressService.record(updated, SprintProgress.Kind.END);
+        List<Issue> issues = issueRepository.findAllBySprint(updated);
+        for (Issue issue : issues) {
+            if (issue.getIssueStatus() == null
+                    || !DONE.getStatusID().equals(issue.getIssueStatus().getId())) {
+                issue.setIssueStatus(issueStatusRepository.findById(TO_DO.getStatusID()).orElseThrow());
+            }
             issue.setSprint(null);
-            issueRepository.save(issue);
-        });
-
-        uncompletedIssues.forEach(issue -> {
-            issue.setSprint(null);
-            issue.setIssueStatus(issueStatusRepository.findById(TO_DO.getStatusID()).orElseThrow());
-            issueRepository.save(issue);
-        });
-
+        }
+        issueRepository.saveAll(issues);
         updated.setSprintIssues(new HashSet<>());
-        sprintRepository.save(updated);
-
         updated.setActive(FALSE);
         updated.setIsDone(TRUE);
         sprintRepository.save(updated);
-        sprintRepository.deleteById(updated.getId());
+    }
+
+    private void requireOpen(Sprint sprint) {
+        if (Boolean.TRUE.equals(sprint.getIsDone())) {
+            throw new IllegalStateException("Closed sprint cannot be changed or restarted");
+        }
     }
 
     private Pair<Boolean, String> validateSprintDatesForStart(Sprint sprint) {

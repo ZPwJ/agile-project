@@ -208,7 +208,9 @@ public class SprintServiceTest {
 
         //given
         Integer sprintID = sprintRepository.save(createSprintEntity(defaultScrumProject, Boolean.FALSE)).getId();
-        Integer issueID = issueRepository.save(createIssueEntity()).getId();
+        Issue issue = createIssueEntity();
+        issue.setProjectID(defaultScrumProject.getId());
+        Integer issueID = issueRepository.save(issue).getId();
 
         //when
         sprintService.addIssueToSprint(issueID, sprintID);
@@ -354,7 +356,10 @@ public class SprintServiceTest {
         assertEquals(DONE.getStatusID(), doneIssue.getIssueStatus().getId());
         assertNull(inProgressIssue.getSprint());
         assertNull(doneIssue.getSprint());
-        assertNull(sprintAfterStopOperation);
+        assertNotNull(sprintAfterStopOperation);
+        assertTrue(sprintAfterStopOperation.getIsDone());
+        assertFalse(sprintAfterStopOperation.getActive());
+        assertNotNull(sprintAfterStopOperation.getEndDate());
     }
 
     @Test

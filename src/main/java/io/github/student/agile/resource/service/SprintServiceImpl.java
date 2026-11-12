@@ -195,6 +195,7 @@ public class SprintServiceImpl implements SprintService {
 
         issue.setSprint(sprint);
         issueRepository.save(issue);
+        progressService.recordChange(sprint);
     }
 
     @Override
@@ -217,6 +218,7 @@ public class SprintServiceImpl implements SprintService {
 
         issue.setSprint(null);
         issueRepository.save(issue);
+        progressService.recordChange(sprint);
     }
 
     @Override

@@ -23,6 +23,13 @@ public class SprintProgressService {
     private final IssueRepository issueRepository;
     private final SprintProgressRepository progressRepository;
 
+    public void recordChange(Sprint sprint) {
+        if (sprint != null && Boolean.TRUE.equals(sprint.getActive())
+                && !Boolean.TRUE.equals(sprint.getIsDone())) {
+            record(sprint, SprintProgress.Kind.CHANGE);
+        }
+    }
+
     public void record(Sprint sprint, SprintProgress.Kind kind) {
         List<Issue> issues = issueRepository.findAllBySprint(sprint);
         List<Issue> completed = issues.stream()

@@ -225,7 +225,7 @@ public class SprintServiceTest {
     public void addIssueToSprint_throwsIssueDoesNotExistsExceptionTest() {
 
         //given
-        Integer fakeIssueID = -10;
+        Integer fakeIssueID = Integer.MAX_VALUE;
 
         //when
         Exception exception = assertThrows(RuntimeException.class, () -> sprintService.addIssueToSprint(fakeIssueID, null));
@@ -239,7 +239,7 @@ public class SprintServiceTest {
 
         //given
         Integer issueID = issueRepository.save(createIssueEntity()).getId();
-        Integer fakeSprintID = -10;
+        Integer fakeSprintID = Integer.MAX_VALUE;
 
         //when
         Exception exception = assertThrows(RuntimeException.class, () -> sprintService.addIssueToSprint(issueID, fakeSprintID));
@@ -297,7 +297,7 @@ public class SprintServiceTest {
     public void startSprint_throwsSprintDoesNotExistsExceptionTest() {
 
         //given
-        Integer fakeSprintID = -10;
+        Integer fakeSprintID = Integer.MAX_VALUE;
 
         //when
         Exception exception = assertThrows(RuntimeException.class, () -> sprintService.startSprint(fakeSprintID));
@@ -366,7 +366,7 @@ public class SprintServiceTest {
     public void stopSprint_throwsProjectDoesNotExistsExceptionTest() {
 
         //given
-        Integer fakeProjectID = -10;
+        Integer fakeProjectID = Integer.MAX_VALUE;
 
         //when
         Exception exception = assertThrows(RuntimeException.class, () -> sprintService.stopSprint(fakeProjectID));
@@ -426,7 +426,7 @@ public class SprintServiceTest {
     public void deleteSprint_throwsSprintDoesNotExistsExceptionTest() {
 
         //given
-        Integer fakeSprintID = -10;
+        Integer fakeSprintID = Integer.MAX_VALUE;
 
         //when
         Exception exception = assertThrows(RuntimeException.class, () -> sprintService.deleteSprint(fakeSprintID));

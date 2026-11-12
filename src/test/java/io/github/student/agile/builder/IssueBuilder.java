@@ -22,8 +22,8 @@ public class IssueBuilder {
     public static final String OTHER_ISSUE_DESCRIPTION = "Other issue description";
     private static final Integer DEFAULT_ISSUE_ESTIMATION = 13;
     public static final Integer OTHER_ISSUE_ESTIMATION = 14;
-    private static final Integer FAKE_ISSUE_TYPE_ID = -10;
-    private static final Integer FAKE_ISSUE_PRIORITY_ID = -10;
+    private static final Integer FAKE_ISSUE_TYPE_ID = Integer.MAX_VALUE;
+    private static final Integer FAKE_ISSUE_PRIORITY_ID = Integer.MAX_VALUE;
 
     public static IssueMRO createDefaultIssue(Integer projectID) {
         return IssueMRO.builder()

@@ -1,6 +1,8 @@
 package io.github.student.agile.resource.service;
 
-import io.github.student.agile.exception.definition.NullIdentifierException;
+import io.github.student.agile.exception.definition.BadRequestException;
+import io.github.student.agile.exception.definition.ResourceNotFoundException;
+import io.github.student.agile.exception.definition.StateConflictException;
 import io.github.student.agile.resource.domain.Backlog;
 import io.github.student.agile.resource.domain.Issue;
 import io.github.student.agile.resource.domain.IssuePriority;
@@ -25,6 +27,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -34,7 +37,6 @@ import static io.github.student.agile.exception.dictionary.ExceptionMessages.IMP
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.ISSUE_DOES_NOT_EXISTS;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.ISSUE_PRIORITY_DOES_NOT_EXISTS;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.ISSUE_TYPE_DOES_NOT_EXISTS;
-import static io.github.student.agile.exception.dictionary.ExceptionMessages.NULL_IDENTIFIER;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.PROJECT_DOES_NOT_EXISTS;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.PROJECT_ID_EMPTY;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.SPRINT_DOES_NOT_EXISTS;
@@ -45,6 +47,9 @@ import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.D
 import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.IN_PROGRESS;
 import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.IN_TESTS;
 import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.TO_DO;
+import static io.github.student.agile.resource.service.RequestValidation.requirePositiveId;
+import static io.github.student.agile.resource.service.RequestValidation.requireName;
+import static io.github.student.agile.resource.service.RequestValidation.validateEstimation;
 import static java.util.Objects.isNull;
 import static java.util.Optional.ofNullable;
 
@@ -63,14 +68,17 @@ public class IssueServiceImpl implements IssueService{
     private final UserService userService;
     private final IssueDTOMapper issueDTOMapper;
     private final IssueGeneralDTOMapper issueGeneralDTOMapper;
+    private final SprintProgressService progressService;
 
     @Override
     public IssueDTO createIssue(IssueMRO issueDTO) {
+        requireName(issueDTO.getName());
+        validateEstimation(issueDTO.getEstimation());
 
-        Project project = projectRepository.findById(issueDTO.getProjectID())
-                .orElseThrow(() -> new RuntimeException(PROJECT_DOES_NOT_EXISTS));
+        Project project = projectRepository.findById(requirePositiveId(issueDTO.getProjectID()))
+                .orElseThrow(() -> new ResourceNotFoundException(PROJECT_DOES_NOT_EXISTS));
         IssueStatus status = issueStatusRepository.findById(TO_DO.getStatusID())
-                .orElseThrow(() -> new RuntimeException(STATUS_DOES_NOT_EXISTS));
+                .orElseThrow(() -> new ResourceNotFoundException(STATUS_DOES_NOT_EXISTS));
 
         Optional<Integer> issueType = ofNullable(issueDTO.getIssueTypeID());
         Optional<Integer> issuePriority = ofNullable(issueDTO.getIssuePriorityID());
@@ -78,13 +86,13 @@ public class IssueServiceImpl implements IssueService{
         IssuePriority priority = null;
 
         if (issueType.isPresent()) {
-            type = issueTypeRepository.findById(issueDTO.getIssueTypeID())
-                    .orElseThrow(() -> new RuntimeException(ISSUE_TYPE_DOES_NOT_EXISTS));
+            type = issueTypeRepository.findById(requirePositiveId(issueDTO.getIssueTypeID()))
+                    .orElseThrow(() -> new ResourceNotFoundException(ISSUE_TYPE_DOES_NOT_EXISTS));
         }
 
         if (issuePriority.isPresent()) {
-            priority = issuePriorityRepository.findById(issueDTO.getIssuePriorityID())
-                    .orElseThrow(() -> new RuntimeException(ISSUE_PRIORITY_DOES_NOT_EXISTS));
+            priority = issuePriorityRepository.findById(requirePositiveId(issueDTO.getIssuePriorityID()))
+                    .orElseThrow(() -> new ResourceNotFoundException(ISSUE_PRIORITY_DOES_NOT_EXISTS));
         }
 
         Issue issue = Issue.builder()
@@ -111,40 +119,45 @@ public class IssueServiceImpl implements IssueService{
     public IssueDTO updateIssue(IssueMRO issueDTO) {
 
         Issue updated = issueRepository.findById(
-                ofNullable(issueDTO.getIssueID()).orElseThrow(
-                        () -> new IllegalArgumentException(NULL_IDENTIFIER))
+                requirePositiveId(issueDTO.getIssueID())
                 )
-                .orElseThrow(() -> new RuntimeException(ISSUE_DOES_NOT_EXISTS));
+                .orElseThrow(() -> new ResourceNotFoundException(ISSUE_DOES_NOT_EXISTS));
 
         Optional<Integer> issuePriority = ofNullable(issueDTO.getIssuePriorityID());
         IssuePriority priority = null;
 
         if (issuePriority.isPresent()) {
-            priority = issuePriorityRepository.findById(issueDTO.getIssuePriorityID())
-                    .orElseThrow(() -> new RuntimeException(ISSUE_PRIORITY_DOES_NOT_EXISTS));
+            priority = issuePriorityRepository.findById(requirePositiveId(issueDTO.getIssuePriorityID()))
+                    .orElseThrow(() -> new ResourceNotFoundException(ISSUE_PRIORITY_DOES_NOT_EXISTS));
         }
 
-        updated.setName(ofNullable(issueDTO.getName()).orElseThrow());
-        updated.setDescription(ofNullable(issueDTO.getDescription()).orElseThrow());
+        requireName(issueDTO.getName());
+        validateEstimation(issueDTO.getEstimation());
+        boolean estimationChanged = !Objects.equals(updated.getEstimation(), issueDTO.getEstimation());
+        updated.setName(issueDTO.getName());
+        updated.setDescription(issueDTO.getDescription());
         updated.setEstimation(issueDTO.getEstimation());
         updated.setIssuePriority(isNull(priority) ? null : priority);
         issueRepository.save(updated);
+        if (estimationChanged) {
+            progressService.recordChange(updated.getSprint());
+        }
         return issueDTOMapper.map(updated);
     }
 
     @Override
     public void deleteIssue(Integer issueID) {
 
-        Issue issue = issueRepository.findById(issueID)
-                .orElseThrow(() -> new RuntimeException(ISSUE_DOES_NOT_EXISTS));
+        Issue issue = issueRepository.findById(requirePositiveId(issueID))
+                .orElseThrow(() -> new ResourceNotFoundException(ISSUE_DOES_NOT_EXISTS));
 
         Integer projectID = issue.getProjectID();
         if (isNull(projectID)) {
-            throw new RuntimeException(PROJECT_ID_EMPTY);
+            throw new StateConflictException(PROJECT_ID_EMPTY);
         }
 
-        Project project = projectRepository.findById(projectID)
-                .orElseThrow(() -> new RuntimeException(PROJECT_DOES_NOT_EXISTS));
+        Project project = projectRepository.findById(requirePositiveId(projectID))
+                .orElseThrow(() -> new ResourceNotFoundException(PROJECT_DOES_NOT_EXISTS));
 
 
         Backlog backlog = project.getBacklog();
@@ -153,22 +166,28 @@ public class IssueServiceImpl implements IssueService{
         backlogIssues.remove(issue);
         backlog.setIssues(backlogIssues);
         backlogRepository.save(backlog);
+        Sprint sprint = issue.getSprint();
+        if (sprint != null) {
+            sprint.getSprintIssues().remove(issue);
+            issue.setSprint(null);
+        }
         issueRepository.deleteById(issueID);
+        progressService.recordChange(sprint);
     }
 
     @Override
     public IssueDTO getIssueDetails(Integer issueID) {
 
-        Issue issue = issueRepository.findById(issueID)
-                .orElseThrow(() -> new RuntimeException(ISSUE_DOES_NOT_EXISTS));
+        Issue issue = issueRepository.findById(requirePositiveId(issueID))
+                .orElseThrow(() -> new ResourceNotFoundException(ISSUE_DOES_NOT_EXISTS));
         return issueDTOMapper.map(issue);
     }
 
     @Override
     public List<IssueGeneralDTO> getIssuesGeneral(Integer projectID) {
 
-        Project project = projectRepository.findById(projectID)
-                .orElseThrow(() -> new RuntimeException(PROJECT_DOES_NOT_EXISTS));
+        Project project = projectRepository.findById(requirePositiveId(projectID))
+                .orElseThrow(() -> new ResourceNotFoundException(PROJECT_DOES_NOT_EXISTS));
         return project.getBacklog()
                 .getIssues()
                 .stream()
@@ -178,8 +197,8 @@ public class IssueServiceImpl implements IssueService{
 
     @Override
     public List<IssueGeneralDTO> getProductBacklog(Integer projectID) {
-        Project project = projectRepository.findById(projectID)
-                .orElseThrow(() -> new RuntimeException(PROJECT_DOES_NOT_EXISTS));
+        Project project = projectRepository.findById(requirePositiveId(projectID))
+                .orElseThrow(() -> new ResourceNotFoundException(PROJECT_DOES_NOT_EXISTS));
         return project.getBacklog()
                 .getIssues()
                 .stream()
@@ -192,8 +211,8 @@ public class IssueServiceImpl implements IssueService{
     @Override
     public List<IssueGeneralDTO> getBacklogHistory(Integer projectID) {
 
-        Project project = projectRepository.findById(projectID)
-                .orElseThrow(() -> new RuntimeException(PROJECT_DOES_NOT_EXISTS));
+        Project project = projectRepository.findById(requirePositiveId(projectID))
+                .orElseThrow(() -> new ResourceNotFoundException(PROJECT_DOES_NOT_EXISTS));
 
         return project.getBacklog()
                 .getIssues()
@@ -215,8 +234,8 @@ public class IssueServiceImpl implements IssueService{
     @Override
     public List<IssueGeneralDTO> getGeneralIssuesInfoBySprintID(Integer sprintID) {
 
-        Sprint sprint = sprintRepository.findById(ofNullable(sprintID).orElseThrow(NullIdentifierException::new))
-                .orElseThrow(() -> new IllegalArgumentException(SPRINT_DOES_NOT_EXISTS));
+        Sprint sprint = sprintRepository.findById(requirePositiveId(sprintID))
+                .orElseThrow(() -> new ResourceNotFoundException(SPRINT_DOES_NOT_EXISTS));
 
         return issueRepository.findAllBySprint(sprint)
                 .stream()
@@ -227,8 +246,8 @@ public class IssueServiceImpl implements IssueService{
     @Override
     public void assignCurrentUserToIssue(Integer issueID) {
 
-        Issue updated = issueRepository.findById(issueID)
-                .orElseThrow(() -> new RuntimeException(ISSUE_DOES_NOT_EXISTS));
+        Issue updated = issueRepository.findById(requirePositiveId(issueID))
+                .orElseThrow(() -> new ResourceNotFoundException(ISSUE_DOES_NOT_EXISTS));
         updated.setAssigneeID(userService.getCurrentLoggedUser().getUuid());
         issueRepository.save(updated);
     }
@@ -236,8 +255,8 @@ public class IssueServiceImpl implements IssueService{
     @Override
     public void deleteUserToIssueAssignment(Integer issueID) {
 
-        Issue updated = issueRepository.findById(issueID)
-                .orElseThrow(() -> new RuntimeException(ISSUE_DOES_NOT_EXISTS));
+        Issue updated = issueRepository.findById(requirePositiveId(issueID))
+                .orElseThrow(() -> new ResourceNotFoundException(ISSUE_DOES_NOT_EXISTS));
         updated.setAssigneeID(null);
         issueRepository.save(updated);
     }
@@ -246,27 +265,28 @@ public class IssueServiceImpl implements IssueService{
     public void changeIssueStatus(Integer issueID, Integer statusID) {
 
         Issue updated = issueRepository
-                .findById(ofNullable(issueID).orElseThrow(NullIdentifierException::new))
-                .orElseThrow(() -> new IllegalArgumentException(ISSUE_DOES_NOT_EXISTS));
+                .findById(requirePositiveId(issueID))
+                .orElseThrow(() -> new ResourceNotFoundException(ISSUE_DOES_NOT_EXISTS));
 
         Optional<Sprint> issueSprint = ofNullable(updated.getSprint());
         if (issueSprint.isEmpty()) {
-            throw new RuntimeException(IMPOSSIBLE_ISSUE_STATUS_CHANGE_SPRINT_EMPTY);
+            throw new StateConflictException(IMPOSSIBLE_ISSUE_STATUS_CHANGE_SPRINT_EMPTY);
         }
 
         if (!issueSprint.get().getActive()) {
-            throw new RuntimeException(IMPOSSIBLE_ISSUE_STATUS_CHANGE_SPRINT_NOT_ACTIVE);
+            throw new StateConflictException(IMPOSSIBLE_ISSUE_STATUS_CHANGE_SPRINT_NOT_ACTIVE);
         }
 
         IssueStatus currentStatus = updated.getIssueStatus();
-        IssueStatus newStatus = issueStatusRepository.findById(ofNullable(statusID).orElseThrow(NullIdentifierException::new))
-                .orElseThrow(() -> new IllegalArgumentException(STATUS_DOES_NOT_EXISTS));
+        IssueStatus newStatus = issueStatusRepository.findById(requirePositiveId(statusID))
+                .orElseThrow(() -> new ResourceNotFoundException(STATUS_DOES_NOT_EXISTS));
 
         if (!isStatusChangeFlowCorrect(currentStatus, newStatus)) {
-            throw new RuntimeException(STATUS_FLOW_ORDER_VIOLATION);
+            throw new StateConflictException(STATUS_FLOW_ORDER_VIOLATION);
         }
         updated.setIssueStatus(newStatus);
         issueRepository.save(updated);
+        progressService.recordChange(updated.getSprint());
     }
 
     private boolean isStatusChangeFlowCorrect(IssueStatus current, IssueStatus changeRequested) {

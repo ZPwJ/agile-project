@@ -221,7 +221,7 @@ public class IssueServiceTest {
     public void getIssueDetails_throwsIssueDoesNotExistsExceptionTest() {
 
         //given
-        Integer fakeIssueID = -10;
+        Integer fakeIssueID = Integer.MAX_VALUE;
 
         //when
         Exception exception = assertThrows(RuntimeException.class, () -> issueService.getIssueDetails(fakeIssueID));
@@ -410,7 +410,7 @@ public class IssueServiceTest {
     public void assignCurrentUserToIssue_throwsIssueDoesNotExistsExceptionTest() {
 
         //given
-        Integer fakeIssueID = -10;
+        Integer fakeIssueID = Integer.MAX_VALUE;
 
         //when
         Exception exception = assertThrows(RuntimeException.class, () -> issueService.assignCurrentUserToIssue(fakeIssueID));
@@ -443,7 +443,7 @@ public class IssueServiceTest {
     public void deleteUserToIssueAssignment_throwsIssueDoesNotExistsExceptionTest() {
 
         //given
-        Integer fakeIssueID = -10;
+        Integer fakeIssueID = Integer.MAX_VALUE;
 
         //when
         Exception exception = assertThrows(RuntimeException.class, () -> issueService.deleteUserToIssueAssignment(fakeIssueID));
@@ -475,7 +475,7 @@ public class IssueServiceTest {
     public void getGeneralIssuesInfoBySprintID_throwsSprintDoesNotExistsExceptionTest() {
 
         //given
-        Integer fakeSprintID = -10;
+        Integer fakeSprintID = Integer.MAX_VALUE;
 
         //when
         Exception exception = assertThrows(RuntimeException.class, () -> issueService.getGeneralIssuesInfoBySprintID(fakeSprintID));
@@ -510,7 +510,7 @@ public class IssueServiceTest {
     public void changeIssueStatus_throwsIssueDoesNotExistsExceptionTest() {
 
         //given
-        Integer fakeIssueID = -10;
+        Integer fakeIssueID = Integer.MAX_VALUE;
 
         //when
         Exception exception = assertThrows(RuntimeException.class, () -> issueService.changeIssueStatus(fakeIssueID, null));

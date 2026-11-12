@@ -111,7 +111,21 @@ cd agile-project
 
 Replace `<repository-url>` with the URL of your Git repository.
 
-### 2. Start the application
+### 2. Configure `.env`
+
+Compose reads the passwords from a `.env` file in the repository root. Create it from the example and fill in the values:
+
+```bash
+cp .env.example .env
+```
+
+- `POSTGRES_PASSWORD` and `SPRING_DATASOURCE_PASSWORD` have to be the same (app database),
+- `AUTH_DB_POSTGRES_PASSWORD` and `KC_DB_PASSWORD` have to be the same (Keycloak database),
+- `AUTH_SERVER_CLIENT_SECRET` is the `secret` of the `agile-project-server` client in `infrastructure/auth-server/realm-export.json`.
+
+The other passwords can be anything. Postgres sets the password only when its volume is created, so if you change it later you have to recreate the volume with `docker compose down -v` (this deletes the data).
+
+### 3. Start the application
 
 Run the following command from the repository root:
 
@@ -127,7 +141,7 @@ To run the stack in the background:
 docker compose -f compose.yaml up --build -d
 ```
 
-### 3. Verify the services
+### 4. Verify the services
 
 Once the services have started, the main endpoints are:
 
@@ -135,12 +149,12 @@ Once the services have started, the main endpoints are:
 |---|---|
 | Resource server | [http://localhost:8081](http://localhost:8081) |
 | Authentication server | [http://localhost:8080](http://localhost:8080) |
-| OpenAPI UI | [http://localhost:8081/docs.html](http://localhost:8081/docs.html) |
+| OpenAPI UI | [http://localhost:8081/swagger-ui](http://localhost:8081/swagger-ui) |
 | OpenAPI specification | [http://localhost:8081/api-docs](http://localhost:8081/api-docs) |
 
-The API may require authentication for protected endpoints.
+Swagger UI is public, the API itself needs a Bearer token (see [Getting a token](#getting-a-token)).
 
-### 4. Stop the application
+### 5. Stop the application
 
 ```bash
 docker compose -f compose.yaml down
@@ -176,4 +190,39 @@ The imported configuration defines the following realm and client:
 
 ### Sample accounts
 
-The realm
+The realm comes with two test users:
+
+| Username | Password | Role |
+|---|---|---|
+| `admin@agile.local` | `admin123` | `sm` |
+| `developer@agile.local` | `dev123` | `dev` |
+
+### Getting a token
+
+```bash
+source .env
+curl -X POST http://localhost:8080/realms/agile-project/protocol/openid-connect/token \
+  -d grant_type=password \
+  -d client_id=agile-project-server \
+  -d client_secret=$AUTH_SERVER_CLIENT_SECRET \
+  -d username=admin@agile.local \
+  -d password=admin123
+```
+
+Take `access_token` from the response and send it as a Bearer token. In Swagger use the **Authorize** button, with curl:
+
+```bash
+curl http://localhost:8081/api/scrum-project -H "Authorization: Bearer <access_token>"
+```
+
+When the token expires, just request a new one.
+
+## Tests
+
+Requires Java 21 and Maven:
+
+```bash
+mvn verify
+```
+
+Tests run on an in-memory H2 database, so Docker and `.env` are not needed. The JaCoCo report is generated in `target/site/jacoco/index.html`.

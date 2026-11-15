@@ -34,7 +34,9 @@ import static io.github.student.agile.exception.dictionary.ExceptionMessages.SPR
 import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.TO_DO;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.matchesPattern;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -131,6 +133,91 @@ public class AnalyticsRestControllerIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status", is(400)))
                 .andExpect(jsonPath("$.message", is("Invalid value 'abc' for parameter 'sprintID'")));
+    }
+
+    @Test
+    public void getSprintBurndown_returnsChronologicalPoints() throws Exception {
+
+        Sprint sprint = startedSprintWithIssue(5);
+
+        mvc.perform(get(ANALYTICS_BASE_URL + "/sprints/{id}/burndown", sprint.getId()))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.sprintID", is(sprint.getId())))
+                .andExpect(jsonPath("$.projectID", is(project.getId())))
+                .andExpect(jsonPath("$.state", is("ACTIVE")))
+                .andExpect(jsonPath("$.historyAvailable", is(true)))
+                .andExpect(jsonPath("$.initialScope", is(5)))
+                .andExpect(jsonPath("$.estimationUnit", is("STORY_POINTS")))
+                .andExpect(jsonPath("$.timeZone", is("Europe/Warsaw")))
+                .andExpect(jsonPath("$.points[0].day", is(0)))
+                .andExpect(jsonPath("$.points[0].date", matchesPattern("\\d{4}-\\d{2}-\\d{2}")))
+                .andExpect(jsonPath("$.points[0].remainingWork", is(5)))
+                .andExpect(jsonPath("$.points[1].day", is(1)));
+    }
+
+    @Test
+    public void getSprintBurnup_returnsChronologicalPoints() throws Exception {
+
+        Sprint sprint = startedSprintWithIssue(3);
+
+        mvc.perform(get(ANALYTICS_BASE_URL + "/sprints/{id}/burnup", sprint.getId()))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.sprintID", is(sprint.getId())))
+                .andExpect(jsonPath("$.historyAvailable", is(true)))
+                .andExpect(jsonPath("$.estimationUnit", is("STORY_POINTS")))
+                .andExpect(jsonPath("$.timeZone", is("Europe/Warsaw")))
+                .andExpect(jsonPath("$.points[0].day", is(0)))
+                .andExpect(jsonPath("$.points[0].completedWork", is(0)))
+                .andExpect(jsonPath("$.points[0].totalScope", is(3)))
+                .andExpect(jsonPath("$.points[1].day", is(1)));
+    }
+
+    @Test
+    public void getSprintCharts_plannedSprint_returnsEmptyPoints() throws Exception {
+
+        Sprint sprint = sprintRepository.save(createSprintEntity(project, Boolean.FALSE));
+
+        for (String chart : new String[]{"burndown", "burnup"}) {
+            mvc.perform(get(ANALYTICS_BASE_URL + "/sprints/{id}/" + chart, sprint.getId()))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.state", is("PLANNED")))
+                    .andExpect(jsonPath("$.historyAvailable", is(false)))
+                    .andExpect(jsonPath("$.points", hasSize(0)));
+        }
+    }
+
+    @Test
+    public void getSprintCharts_notExistingSprint_returns404() throws Exception {
+
+        for (String chart : new String[]{"burndown", "burnup"}) {
+            mvc.perform(get(ANALYTICS_BASE_URL + "/sprints/{id}/" + chart, -1))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.message", is(SPRINT_DOES_NOT_EXISTS)))
+                    .andExpect(jsonPath("$.path", is(ANALYTICS_BASE_URL + "/sprints/-1/" + chart)));
+        }
+    }
+
+    @Test
+    public void getSprintCharts_nonNumericSprintID_returns400() throws Exception {
+
+        for (String chart : new String[]{"burndown", "burnup"}) {
+            mvc.perform(get(ANALYTICS_BASE_URL + "/sprints/{id}/" + chart, "abc"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message", is("Invalid value 'abc' for parameter 'sprintID'")));
+        }
+    }
+
+    private Sprint startedSprintWithIssue(Integer estimation) {
+        Sprint sprint = sprintRepository.save(createSprintEntity(project, Boolean.FALSE));
+        Issue issue = createIssueEntity();
+        issue.setEstimation(estimation);
+        issue.setIssueStatus(issueStatusRepository.findById(TO_DO.getStatusID()).orElseThrow());
+        issueRepository.save(issue);
+        sprintService.addIssueToSprint(issue.getId(), sprint.getId());
+        sprintService.startSprint(sprint.getId());
+        return sprint;
     }
 
     @Test

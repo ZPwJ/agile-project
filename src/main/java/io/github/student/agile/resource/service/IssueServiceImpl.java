@@ -42,6 +42,7 @@ import static io.github.student.agile.exception.dictionary.ExceptionMessages.ISS
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.ISSUE_PRIORITY_DOES_NOT_EXISTS;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.ISSUE_TYPE_DOES_NOT_EXISTS;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.NULL_IDENTIFIER;
+import static io.github.student.agile.exception.dictionary.ExceptionMessages.NEGATIVE_ESTIMATION;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.PROJECT_DOES_NOT_EXISTS;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.PROJECT_ID_EMPTY;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.SPRINT_DOES_NOT_EXISTS;
@@ -74,6 +75,8 @@ public class IssueServiceImpl implements IssueService{
 
     @Override
     public IssueDTO createIssue(IssueMRO issueDTO) {
+
+        rejectNegativeEstimation(issueDTO.getEstimation());
 
         Project project = projectRepository.findById(issueDTO.getProjectID())
                 .orElseThrow(() -> new ResourceNotFoundException(PROJECT_DOES_NOT_EXISTS));
@@ -132,6 +135,7 @@ public class IssueServiceImpl implements IssueService{
                     .orElseThrow(() -> new ResourceNotFoundException(ISSUE_PRIORITY_DOES_NOT_EXISTS));
         }
 
+        rejectNegativeEstimation(issueDTO.getEstimation());
         boolean estimationChanged = !Objects.equals(updated.getEstimation(), issueDTO.getEstimation());
 
         updated.setName(ofNullable(issueDTO.getName()).orElseThrow());
@@ -286,6 +290,13 @@ public class IssueServiceImpl implements IssueService{
         // DONE is terminal in the status flow, so each issue is completed at most once per sprint.
         if (DONE.getStatusID().equals(newStatus.getId())) {
             recordIfInActiveSprint(updated, SprintIssueEventType.COMPLETED);
+        }
+    }
+
+    /** Story points cannot be negative; otherwise velocity and burndown/burnup values could drop below zero. */
+    private static void rejectNegativeEstimation(Integer estimation) {
+        if (!isNull(estimation) && estimation < 0) {
+            throw new InvalidRequestException(NEGATIVE_ESTIMATION);
         }
     }
 

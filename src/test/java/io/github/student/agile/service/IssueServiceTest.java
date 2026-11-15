@@ -1,5 +1,6 @@
 package io.github.student.agile.service;
 
+import io.github.student.agile.exception.definition.InvalidRequestException;
 import io.github.student.agile.builder.IssueBuilder;
 import io.github.student.agile.builder.SprintBuilder;
 import io.github.student.agile.builder.UserBuilder;
@@ -60,6 +61,7 @@ import static io.github.student.agile.exception.dictionary.ExceptionMessages.IMP
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.ISSUE_DOES_NOT_EXISTS;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.ISSUE_PRIORITY_DOES_NOT_EXISTS;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.ISSUE_TYPE_DOES_NOT_EXISTS;
+import static io.github.student.agile.exception.dictionary.ExceptionMessages.NEGATIVE_ESTIMATION;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.NULL_IDENTIFIER;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.PROJECT_DOES_NOT_EXISTS;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.SPRINT_DOES_NOT_EXISTS;
@@ -269,6 +271,42 @@ public class IssueServiceTest {
 
         //then
         assertEquals(PROJECT_DOES_NOT_EXISTS, exception.getMessage());
+    }
+
+    @Test
+    public void createIssue_negativeEstimation_throwsInvalidRequestExceptionTest() {
+
+        //given
+        IssueMRO issueMRO = createDefaultIssue(defaultScrumProject.getId());
+        issueMRO.setEstimation(-1);
+        long issueAmount = issueRepository.count();
+
+        //when
+        Exception exception = assertThrows(InvalidRequestException.class, () -> issueService.createIssue(issueMRO));
+
+        //then
+        assertEquals(NEGATIVE_ESTIMATION, exception.getMessage());
+        assertEquals(issueAmount, issueRepository.count());
+    }
+
+    @Test
+    public void updateIssue_negativeEstimation_throwsInvalidRequestExceptionTest() {
+
+        //given
+        Issue issue = issueRepository.save(createIssueEntity());
+        IssueMRO issueMRO = IssueMRO.builder()
+                .issueID(issue.getId())
+                .name(OTHER_ISSUE_NAME)
+                .description(OTHER_ISSUE_DESCRIPTION)
+                .estimation(-5)
+                .build();
+
+        //when
+        Exception exception = assertThrows(InvalidRequestException.class, () -> issueService.updateIssue(issueMRO));
+
+        //then
+        assertEquals(NEGATIVE_ESTIMATION, exception.getMessage());
+        assertEquals(issue.getEstimation(), issueRepository.findById(issue.getId()).orElseThrow().getEstimation());
     }
 
     @Test

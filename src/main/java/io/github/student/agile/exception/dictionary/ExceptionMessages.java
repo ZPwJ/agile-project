@@ -26,5 +26,6 @@ public interface ExceptionMessages {
     String EMPTY_SPRINT = "It is not allowed to start sprint without any issue";
     String COMMENT_DOES_NOT_EXISTS = "Comment with given ID does not exists";
     String FORBIDDEN_COMMENT_ACCESS = "It is not allowed to modify or delete comment of another user";
+    String NEGATIVE_ESTIMATION = "Issue estimation cannot be negative";
     String USERS_NUMBER_EXCEEDED = "The maximum number of users has been exceeded";
 }

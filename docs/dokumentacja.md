@@ -5,13 +5,13 @@ porównanie sprintów z filtrowaniem po datach oraz eksport CSV. Prace rozpoczę
 
 ## Podział prac
 
-| Osoba | Zakres | Wymagania |
-|---|---|---|
-| A – Kamil Oleksiak (JasperBTA) | cykl życia sprintu, historia zdarzeń sprintu (#5, #6, #7, #8) | WF-1, WF-2, WF-3, WF-4 (dane) |
+| Osoba                              | Zakres | Wymagania |
+|------------------------------------|---|---|
+| A – Kamil Oleksiak (JasperBTA)     | cykl życia sprintu, historia zdarzeń sprintu (#5, #6, #7, #8) | WF-1, WF-2, WF-3, WF-4 (dane) |
 | B - Jakub Sawicki (JakubSawicki03) | obsługa błędów API, velocity, raport podsumowujący sprint (#10, #11, #12) | WF-1, WF-2, WNF |
-| C | dane do wykresów burndown i burnup (#13, #14) | WF-3, WF-4 |
-| D | porównanie sprintów projektu, filtrowanie po dacie (#15, #16) | WF-5, WF-6 |
-| E | generator i eksport CSV, pomiar pokrycia JaCoCo, testy kontrolerów, instrukcja uruchomienia (#17, #18, #19, #20, #21) | WF-7, WNF |
+| C - Nikodem Wełna (shoxxie01)      | dane do wykresów burndown i burnup (#13, #14) | WF-3, WF-4 |
+| D                                  | porównanie sprintów projektu, filtrowanie po dacie (#15, #16) | WF-5, WF-6 |
+| E                                  | generator i eksport CSV, pomiar pokrycia JaCoCo, testy kontrolerów, instrukcja uruchomienia (#17, #18, #19, #20, #21) | WF-7, WNF |
 
 Wspólnie: reguły obliczeń i kontrakt API (#4), dane demonstracyjne (#9), Pull Request i oddanie projektu (#22).
 
@@ -24,6 +24,7 @@ Wspólnie: reguły obliczeń i kontrakt API (#4), dane demonstracyjne (#9), Pull
 | `SprintServiceImpl` | zakończonego sprintu nie można ponownie rozpocząć, usunąć ani dodać do niego zadań; do sprintu nie można dodać zadania `DONE` | zamknięty sprint jest danymi historycznymi |
 | `SprintServiceImpl`, `IssueServiceImpl` | zapis zdarzeń przy starcie sprintu, dodaniu i usunięciu zadania, zmianie estymacji i ukończeniu zadania | bez historii nie da się odtworzyć przebiegu sprintu |
 | `ExceptionMessages` | komunikaty `SPRINT_ALREADY_FINISHED`, `ISSUE_ALREADY_DONE` | nowe blokady |
+| `IssueServiceImpl` | tworzenie i edycja zadania odrzucają ujemną estymację (`NEGATIVE_ESTIMATION`, HTTP 400) | ujemne story points dawałyby ujemne velocity i wartości wykresów (WF-3) |
 | serwisy `*ServiceImpl` | `new RuntimeException(...)` zastąpione typowanymi wyjątkami z `exception.definition`; komunikaty bez zmian | wcześniej każdy błąd biznesowy kończył się HTTP 500; typowane wyjątki dziedziczą po `RuntimeException`, więc istniejące testy działają bez zmian |
 
 ## Nowe elementy
@@ -40,8 +41,8 @@ Wspólnie: reguły obliczeń i kontrakt API (#4), dane demonstracyjne (#9), Pull
 | Metoda | Ścieżka | Wymaganie | Status |
 |---|---|---|---|
 | GET | `/api/analytics/sprints/{id}/report` | WF-1, WF-2 | gotowe |
-| GET | `/api/analytics/sprints/{id}/burndown` | WF-3 | w realizacji |
-| GET | `/api/analytics/sprints/{id}/burnup` | WF-4 | w realizacji |
+| GET | `/api/analytics/sprints/{id}/burndown` | WF-3 | gotowe |
+| GET | `/api/analytics/sprints/{id}/burnup` | WF-4 | gotowe |
 | GET | `/api/analytics/projects/{id}/sprints?from=&to=` | WF-5, WF-6 | w realizacji |
 | GET | `/api/analytics/projects/{id}/sprints/export.csv?from=&to=` | WF-7 | w realizacji |
 
@@ -89,12 +90,17 @@ Jednostką są story points (`Issue.estimation`). Zadanie jest ukończone, gdy m
   minus praca ukończona do końca dnia. Wartości nie spadają poniżej zera.
 - **Burnup**: dla każdego dnia narastająca suma ukończonej pracy oraz całkowity zakres,
   zmieniany przez zdarzenia `ADDED`, `REMOVED` i `ESTIMATION_CHANGED`.
+- „Praca ukończona do końca dnia” liczona jest tymi samymi regułami co velocity (`SprintIssueStates`),
+  więc ostatni punkt burnup ma `completedWork` równe velocity z raportu sprintu,
+  a `totalScope` równe `velocity + uncompletedEstimation`.
 
 Dni liczone są w strefie `Europe/Warsaw`.
 
 ## Przypadki szczególne
 
 - **Zadania bez estymacji** są liczone w liczbie zadań, ale nie zwiększają sumy punktów.
+- **Ujemna estymacja** jest odrzucana przy tworzeniu i edycji zadania (400, `Issue estimation cannot be negative`),
+  dzięki czemu velocity i wartości na wykresach są zawsze nieujemne.
 - **Zmiany zakresu sprintu** po starcie są zapisywane jako `ADDED`, `REMOVED` i `ESTIMATION_CHANGED`.
   Widać je na wykresie burnup jako zmianę linii zakresu; burndown liczony jest od zakresu początkowego.
 - **Brak historii**: zdarzenia zapisywane są od wdrożenia modułu. Sprint rozpoczęty wcześniej nie ma `startedAt`
@@ -163,9 +169,70 @@ mvn verify
 ```
 
 Raport JaCoCo powstaje w `target/site/jacoco/index.html`.
-Aktualny wynik (8 listopada 2026 r., po WF-1, WF-2 i obsłudze błędów): 144 testy, wszystkie przechodzą,
-pokrycie instrukcji 71,94% (2713 z 3771). Wymagane minimum to 75%.
-Raport obejmuje cały kod produkcyjny, bez wykluczeń. Nowy kod raportu sprintu, velocity i obsługi błędów ma pokrycie 98,9%.
+Aktualny wynik (15 listopada 2026 r., po WF-1–WF-4 i obsłudze błędów): 173 testy, wszystkie przechodzą,
+pokrycie instrukcji 74,59% (3106 z 4164). Wymagane minimum to 75%.
+Raport obejmuje cały kod produkcyjny, bez wykluczeń. Nowy kod raportu sprintu, velocity i obsługi błędów ma pokrycie 98,9%,
+kod wykresów burndown i burnup — 100%.
+
+## Wykresy burndown i burnup — stan realizacji (osoba C)
+
+Zrobione: WF-3 (#13) i WF-4 (#14). Endpointy `GET /api/analytics/sprints/{sprintID}/burndown`
+i `GET /api/analytics/sprints/{sprintID}/burnup` zwracają 200, 404 dla nieistniejącego sprintu
+i 400 dla nienumerycznego id.
+
+### Punkty wykresu
+
+- `day = 0` to chwila startu sprintu (`startedAt`): zakres początkowy, nic nie jest jeszcze ukończone.
+- `day = n` (n ≥ 1) to stan na **koniec n-tego dnia kalendarzowego** sprintu w strefie `Europe/Warsaw`
+  (pole `timeZone`). Uwzględnia wszystkie zdarzenia, które wystąpiły tego dnia lub wcześniej.
+- Ostatni dzień to dzień zakończenia sprintu (`endedAt`), a dla trwającego sprintu dzień dzisiejszy.
+- `date` to data w formacie ISO-8601 (`YYYY-MM-DD`). Punkty są zawsze posortowane rosnąco po `day`, dni są kolejne, bez przerw.
+- Wszystkie wartości są w story points (`estimationUnit = STORY_POINTS`) i są nieujemne.
+
+```json
+{ "sprintID": 7, "sprintName": "Sprint 3", "projectID": 1, "state": "FINISHED",
+  "startedAt": "2026-11-02T08:05:00Z", "endedAt": "2026-11-04T16:00:00Z", "historyAvailable": true,
+  "initialScope": 16, "estimationUnit": "STORY_POINTS", "timeZone": "Europe/Warsaw",
+  "points": [ { "day": 0, "date": "2026-11-02", "remainingWork": 16 },
+              { "day": 1, "date": "2026-11-02", "remainingWork": 11 },
+              { "day": 2, "date": "2026-11-03", "remainingWork": 11 },
+              { "day": 3, "date": "2026-11-04", "remainingWork": 3 } ] }
+```
+
+Burnup ma ten sam nagłówek (bez `initialScope`), a punkty postaci
+`{ "day": 3, "date": "2026-11-04", "completedWork": 13, "totalScope": 21 }`.
+
+| Pole punktu | Wykres | Znaczenie |
+|---|---|---|
+| `remainingWork` | burndown | `initialScope` − praca ukończona do tego punktu, minimum 0 |
+| `completedWork` | burnup | narastająca suma estymacji zadań ukończonych w tym sprincie (estymacja z chwili ukończenia) |
+| `totalScope` | burnup | suma estymacji wszystkich zadań w sprincie w tym punkcie: ukończone z estymacją z chwili ukończenia, pozostałe z ostatnią znaną |
+
+### Reguły i przypadki szczególne
+
+- **Zadanie dodane w trakcie sprintu** zwiększa `totalScope` od dnia dodania. Burndown startuje od zakresu początkowego,
+  więc ukończenie dodanego zadania także obniża `remainingWork` — dlatego wartość jest ograniczona do 0.
+- **Zadanie usunięte ze sprintu (lub skasowane)** zmniejsza `totalScope` od dnia usunięcia. Jeśli było ukończone,
+  przestaje być liczone w `completedWork` (zgodnie z velocity). Burndown nadal liczy się od zakresu początkowego.
+- **Zmiana estymacji** zmienia `totalScope` od dnia zmiany; po ukończeniu zadania nie zmienia już ani `completedWork`, ani `totalScope`.
+- **Zadania bez estymacji** nie zmieniają żadnej wartości. Sprint, w którym żadne zadanie nie ma estymacji,
+  zwraca pełną listę punktów z zerami.
+- **Sprint bez historii** (nierozpoczęty albo rozpoczęty przed wdrożeniem modułu) zwraca `historyAvailable = false`
+  i pustą listę `points` — nie da się wiarygodnie odtworzyć jego przebiegu, więc nie zwracamy przybliżonych danych.
+- Wykresy dotyczą tylko wskazanego sprintu: pobierane są wyłącznie jego zdarzenia (jedno zapytanie).
+
+| Klasa | Pakiet | Rola |
+|---|---|---|
+| `SprintProgressCalculator` | `resource.service.analytics` | odtworzenie stanu sprintu dzień po dniu ze zdarzeń |
+| `SprintProgress` | `resource.service.analytics` | wynik: `initialScope` i lista `DailyProgress` (`completedWork`, `totalScope`) |
+| `SprintChartService(Impl)` | `resource.service` | burndown (WF-3) i burnup (WF-4) |
+| `SprintBurndownDTO`, `SprintBurnupDTO` | `resource.dto.analytics` | odpowiedzi API |
+
+Wydajność: stan każdego dnia jest odtwarzany od początku listy zdarzeń, więc koszt to O(dni × zdarzenia).
+Dla typowego sprintu (kilkanaście dni, kilkaset zdarzeń) jest to pomijalne; obliczenia nie wykonują dodatkowych zapytań.
+
+Testy: `SprintProgressCalculatorTest` (jednostkowe, m.in. zmiany zakresu, strefa czasowa, brak estymacji),
+`SprintChartServiceTest` (pełny cykl sprintu, zgodność z raportem sprintu) i nowe przypadki w `AnalyticsRestControllerIntegrationTest`.
 
 ## Zrealizowane GitHub Issues
 
@@ -178,3 +245,5 @@ Raport obejmuje cały kod produkcyjny, bez wykluczeń. Nowy kod raportu sprintu,
 | #10 | Obsługa błędów API | B |
 | #11 | Obliczanie velocity | B |
 | #12 | Raport podsumowujący sprint | B |
+| #13 | Dane do wykresu burndown | C |
+| #14 | Dane do wykresu burnup | C |

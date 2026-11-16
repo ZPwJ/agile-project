@@ -16,12 +16,14 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.converter.ByteArrayHttpMessageConverter;
 import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.ZonedDateTime;
 import java.util.List;
@@ -29,6 +31,8 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest(classes = TestConfiguration.class)
@@ -48,7 +52,7 @@ class SprintComparisonIntegrationTest {
         project = projects.save(Project.builder().name("Comparison").build());
         mvc = MockMvcBuilders.standaloneSetup(new SprintReportRestController(reports))
                 .setControllerAdvice(new ApiExceptionHandler())
-                .setMessageConverters(new MappingJackson2HttpMessageConverter(
+                .setMessageConverters(new ByteArrayHttpMessageConverter(), new MappingJackson2HttpMessageConverter(
                         Jackson2ObjectMapperBuilder.json()
                                 .featuresToDisable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS).build()))
                 .build();
@@ -109,6 +113,52 @@ class SprintComparisonIntegrationTest {
         mvc.perform(get("/api/reports/sprints").param("projectID", project.getId().toString())
                         .param("from", "2026-12-01"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
+    }
+
+    @Test
+    void csvUsesComparisonFiltersAndReturnsUtf8AttachmentWithEscapedNames() throws Exception {
+        closed(project, "Outside range", "2026-10-31T23:59:59Z", 5, 0);
+        Sprint included = closed(project, "Sprint, \"Zażółć\"\nNowa linia", "2026-11-01T12:00:00Z", 8, 3);
+        closed(project, "After range", "2026-11-02T00:00:00Z", 5, 0);
+        closed(projects.save(Project.builder().name("Other CSV project").build()),
+                "Other", "2026-11-01T12:00:00Z", 100, 100);
+        SprintReportDTO row = reports.getComparison(project.getId(),
+                LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 1)).getFirst();
+        assertThat(row.sprintID()).isEqualTo(included.getId());
+
+        String csv = mvc.perform(get("/api/reports/sprints/csv").accept("text/csv")
+                        .param("projectID", project.getId().toString())
+                        .param("from", "2026-11-01").param("to", "2026-11-01"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType("text/csv;charset=UTF-8"))
+                .andExpect(header().string("Content-Disposition",
+                        "attachment; filename=\"sprint-report-" + project.getId() + ".csv\""))
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+
+        assertThat(csv).isEqualTo(
+                "projectID,sprintID,name,startDate,endDate,completedIssueCount,incompleteIssueCount,velocity\r\n"
+                        + row.projectID() + "," + row.sprintID() + ",\"Sprint, \"\"Zażółć\"\"\nNowa linia\","
+                        + row.startDate() + "," + row.endDate() + "," + row.completedIssueCount() + ","
+                        + row.incompleteIssueCount() + "," + row.velocity() + "\r\n");
+    }
+
+    @Test
+    void emptyCsvHasOnlyHeaderAndInvalidRequestsReturnJsonErrors() throws Exception {
+        String csv = mvc.perform(get("/api/reports/sprints/csv").param("projectID", project.getId().toString()))
+                .andExpect(status().isOk()).andExpect(content().contentType("text/csv;charset=UTF-8"))
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        assertThat(csv).isEqualTo(
+                "projectID,sprintID,name,startDate,endDate,completedIssueCount,incompleteIssueCount,velocity\r\n");
+        mvc.perform(get("/api/reports/sprints/csv").param("projectID", "2147483647"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("Project with given ID does not exists"));
+        mvc.perform(get("/api/reports/sprints/csv").param("projectID", project.getId().toString())
+                        .param("from", "2026-11-02").param("to", "2026-11-01"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("from must not be after to"));
+        mvc.perform(get("/api/reports/sprints/csv").param("projectID", project.getId().toString())
+                        .param("to", "2026-02-30"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

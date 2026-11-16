@@ -23,6 +23,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.PROJECT_DOES_NOT_EXISTS;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.SPRINT_DOES_NOT_EXISTS;
@@ -68,6 +69,30 @@ public class SprintReportService {
                 .stream().collect(Collectors.groupingBy(point -> point.getSprint().getId()));
         return sprints.stream().map(sprint -> createReport(sprint,
                 history.getOrDefault(sprint.getId(), List.of()))).toList();
+    }
+
+    public String getComparisonCsv(Integer projectID, LocalDate from, LocalDate to) {
+        List<SprintReportDTO> reports = getComparison(projectID, from, to);
+        StringBuilder csv = new StringBuilder(
+                "projectID,sprintID,name,startDate,endDate,completedIssueCount,incompleteIssueCount,velocity\r\n");
+        for (SprintReportDTO report : reports) {
+            csv.append(Stream.of(report.projectID(), report.sprintID(), report.name(),
+                            report.startDate(), report.endDate(), report.completedIssueCount(),
+                            report.incompleteIssueCount(), report.velocity())
+                    .map(this::csvCell).collect(Collectors.joining(","))).append("\r\n");
+        }
+        return csv.toString();
+    }
+
+    private String csvCell(Object value) {
+        if (value == null) {
+            return "";
+        }
+        String text = value.toString();
+        if (text.contains(",") || text.contains("\"") || text.contains("\n") || text.contains("\r")) {
+            return "\"" + text.replace("\"", "\"\"") + "\"";
+        }
+        return text;
     }
 
     private boolean matchesDateRange(ZonedDateTime endDate, ReportDateRange range) {

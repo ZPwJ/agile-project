@@ -4,10 +4,12 @@ import io.github.student.agile.config.TestConfiguration;
 import io.github.student.agile.resource.domain.Issue;
 import io.github.student.agile.resource.domain.Project;
 import io.github.student.agile.resource.domain.Sprint;
+import io.github.student.agile.resource.domain.dictionary.IssueStatusID;
 import io.github.student.agile.resource.repository.IssueRepository;
 import io.github.student.agile.resource.repository.IssueStatusRepository;
 import io.github.student.agile.resource.repository.ProjectRepository;
 import io.github.student.agile.resource.repository.SprintRepository;
+import io.github.student.agile.resource.service.IssueService;
 import io.github.student.agile.resource.service.SprintService;
 import io.github.student.agile.resource.service.UserService;
 import jakarta.transaction.Transactional;
@@ -29,8 +31,13 @@ import static io.github.student.agile.builder.ProjectBuilder.createProjectEntity
 import static io.github.student.agile.builder.SprintBuilder.SPRINT_NAME;
 import static io.github.student.agile.builder.SprintBuilder.createSprintEntity;
 import static io.github.student.agile.builder.UserBuilder.createCurrentLoggedInUser;
+import static io.github.student.agile.exception.dictionary.ExceptionMessages.PROJECT_DOES_NOT_EXISTS;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.SPRINT_ALREADY_FINISHED;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.SPRINT_DOES_NOT_EXISTS;
+import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.CODE_REVIEW;
+import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.DONE;
+import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.IN_PROGRESS;
+import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.IN_TESTS;
 import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.TO_DO;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -74,6 +81,9 @@ public class AnalyticsRestControllerIntegrationTest {
 
     @Autowired
     private SprintService sprintService;
+
+    @Autowired
+    private IssueService issueService;
 
     private Project project;
 
@@ -207,6 +217,70 @@ public class AnalyticsRestControllerIntegrationTest {
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.message", is("Invalid value 'abc' for parameter 'sprintID'")));
         }
+    }
+
+    @Test
+    public void compareProjectSprints_returnsFinishedSprintsFromOldestToNewest() throws Exception {
+
+        Sprint older = startedSprintWithIssue(5);
+        Issue done = older.getSprintIssues().iterator().next();
+        for (IssueStatusID status : new IssueStatusID[]{IN_PROGRESS, CODE_REVIEW, IN_TESTS, DONE}) {
+            issueService.changeIssueStatus(done.getId(), status.getStatusID());
+        }
+        sprintService.stopSprint(project.getId());
+        Sprint newer = startedSprintWithIssue(3);
+        sprintService.stopSprint(project.getId());
+        startedSprintWithIssue(8);
+
+        mvc.perform(get(ANALYTICS_BASE_URL + "/projects/{id}/sprints", project.getId()))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.projectID", is(project.getId())))
+                .andExpect(jsonPath("$.estimationUnit", is("STORY_POINTS")))
+                .andExpect(jsonPath("$.sprints", hasSize(2)))
+                .andExpect(jsonPath("$.sprints[0].sprintID", is(older.getId())))
+                .andExpect(jsonPath("$.sprints[0].sprintName", is(SPRINT_NAME)))
+                .andExpect(jsonPath("$.sprints[0].startedAt", matchesPattern("\\d{4}-\\d{2}-\\d{2}T.+")))
+                .andExpect(jsonPath("$.sprints[0].endedAt", matchesPattern("\\d{4}-\\d{2}-\\d{2}T.+")))
+                .andExpect(jsonPath("$.sprints[0].historyAvailable", is(true)))
+                .andExpect(jsonPath("$.sprints[0].completedIssueCount", is(1)))
+                .andExpect(jsonPath("$.sprints[0].uncompletedIssueCount", is(0)))
+                .andExpect(jsonPath("$.sprints[0].velocity", is(5)))
+                .andExpect(jsonPath("$.sprints[1].sprintID", is(newer.getId())))
+                .andExpect(jsonPath("$.sprints[1].completedIssueCount", is(0)))
+                .andExpect(jsonPath("$.sprints[1].uncompletedIssueCount", is(1)))
+                .andExpect(jsonPath("$.sprints[1].velocity", is(0)));
+    }
+
+    @Test
+    public void compareProjectSprints_projectWithoutFinishedSprints_returnsEmptyList() throws Exception {
+
+        startedSprintWithIssue(5);
+
+        mvc.perform(get(ANALYTICS_BASE_URL + "/projects/{id}/sprints", project.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.projectID", is(project.getId())))
+                .andExpect(jsonPath("$.sprints", hasSize(0)));
+    }
+
+    @Test
+    public void compareProjectSprints_notExistingProject_returns404() throws Exception {
+
+        mvc.perform(get(ANALYTICS_BASE_URL + "/projects/{id}/sprints", -1))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.status", is(404)))
+                .andExpect(jsonPath("$.error", is("Not Found")))
+                .andExpect(jsonPath("$.message", is(PROJECT_DOES_NOT_EXISTS)))
+                .andExpect(jsonPath("$.path", is(ANALYTICS_BASE_URL + "/projects/-1/sprints")));
+    }
+
+    @Test
+    public void compareProjectSprints_nonNumericProjectID_returns400() throws Exception {
+
+        mvc.perform(get(ANALYTICS_BASE_URL + "/projects/{id}/sprints", "abc"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status", is(400)))
+                .andExpect(jsonPath("$.message", is("Invalid value 'abc' for parameter 'projectID'")));
     }
 
     private Sprint startedSprintWithIssue(Integer estimation) {

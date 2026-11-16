@@ -9,6 +9,7 @@ import io.github.student.agile.resource.domain.Project;
 import io.github.student.agile.resource.domain.Sprint;
 import io.github.student.agile.resource.domain.SprintProgress;
 import io.github.student.agile.resource.dto.BurndownPointDTO;
+import io.github.student.agile.resource.dto.BurnupPointDTO;
 import io.github.student.agile.resource.dto.SprintReportDTO;
 import io.github.student.agile.resource.dto.request.IssueMRO;
 import io.github.student.agile.resource.repository.IssueRepository;
@@ -121,6 +122,11 @@ class SprintReportIntegrationTest {
                 .andExpect(jsonPath("$.message").value("Sprint with given ID does not exists"));
         mvc.perform(get("/api/reports/sprints/0/burndown")).andExpect(status().isBadRequest());
         mvc.perform(get("/api/reports/sprints/text/burndown")).andExpect(status().isBadRequest());
+        mvc.perform(get("/api/reports/sprints/2147483647/burnup"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("Sprint with given ID does not exists"));
+        mvc.perform(get("/api/reports/sprints/0/burnup")).andExpect(status().isBadRequest());
+        mvc.perform(get("/api/reports/sprints/text/burnup")).andExpect(status().isBadRequest());
     }
 
     @Test
@@ -139,7 +145,7 @@ class SprintReportIntegrationTest {
     }
 
     @Test
-    void burndownTracksScopeEstimatesAndCompletionWithoutMixingProjects() throws Exception {
+    void chartsTrackScopeEstimatesAndCompletionWithoutMixingProjects() throws Exception {
         Sprint sprint = sprint(project, "Burndown");
         Issue first = issue(sprint, 1, 3);
         issue(sprint, 1, 2);
@@ -154,19 +160,30 @@ class SprintReportIntegrationTest {
         sprintService.deleteIssueFromSprint(sprint.getId(), added.getId());
 
         Sprint other = sprint(projects.save(Project.builder().name("Other burndown project").build()), "Other");
-        issue(other, 1, 100);
+        issue(other, 5, 100);
         sprintService.startSprint(other.getId());
 
         List<BurndownPointDTO> activePoints = reports.getBurndown(sprint.getId());
         assertThat(activePoints).extracting(BurndownPointDTO::remainingPoints)
                 .containsExactly(5L, 10L, 15L, 15L, 15L, 15L, 7L, 2L);
+        assertThat(reports.getBurnup(sprint.getId())).extracting(BurnupPointDTO::completedPoints)
+                .containsExactly(0L, 0L, 0L, 0L, 0L, 0L, 8L, 8L);
         sprintService.stopSprint(project.getId());
         List<BurndownPointDTO> finalPoints = reports.getBurndown(sprint.getId());
         assertThat(finalPoints).extracting(BurndownPointDTO::remainingPoints)
                 .containsExactly(5L, 10L, 15L, 15L, 15L, 15L, 7L, 2L, 2L);
         assertThat(finalPoints).extracting(BurndownPointDTO::timestamp).isSorted();
+        List<BurnupPointDTO> burnup = reports.getBurnup(sprint.getId());
+        assertThat(burnup).extracting(BurnupPointDTO::completedPoints)
+                .containsExactly(0L, 0L, 0L, 0L, 0L, 0L, 8L, 8L, 8L);
+        assertThat(burnup).extracting(BurnupPointDTO::totalPoints)
+                .containsExactly(5L, 10L, 15L, 15L, 15L, 15L, 15L, 10L, 10L);
+        SprintReportDTO summary = reports.getReport(sprint.getId());
+        assertThat(burnup.getLast().completedPoints()).isEqualTo(summary.velocity());
+        assertThat(burnup.getLast().totalPoints()).isEqualTo(summary.velocity() + summary.incompletePoints());
         reestimate(first, 99);
         assertThat(reports.getBurndown(sprint.getId())).isEqualTo(finalPoints);
+        assertThat(reports.getBurnup(sprint.getId())).isEqualTo(burnup);
 
         mvc.perform(get("/api/reports/sprints/{id}/burndown", sprint.getId()))
                 .andExpect(status().isOk())
@@ -174,12 +191,22 @@ class SprintReportIntegrationTest {
                 .andExpect(jsonPath("$[0].timestamp").value(sprint.getStartDate().toInstant().toString()))
                 .andExpect(jsonPath("$[0].remainingPoints").value(5))
                 .andExpect(jsonPath("$[8].remainingPoints").value(2));
+        mvc.perform(get("/api/reports/sprints/{id}/burnup", sprint.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(9))
+                .andExpect(jsonPath("$[0].timestamp").value(sprint.getStartDate().toInstant().toString()))
+                .andExpect(jsonPath("$[0].completedPoints").value(0))
+                .andExpect(jsonPath("$[0].totalPoints").value(5))
+                .andExpect(jsonPath("$[8].completedPoints").value(8))
+                .andExpect(jsonPath("$[8].totalPoints").value(10));
     }
 
     @Test
-    void burndownReturnsEmptyHistoryAndZeroForUnestimatedWork() throws Exception {
+    void chartsReturnEmptyHistoryAndZeroForUnestimatedWork() throws Exception {
         Sprint sprint = sprint(project, "Unestimated");
         mvc.perform(get("/api/reports/sprints/{id}/burndown", sprint.getId()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
+        mvc.perform(get("/api/reports/sprints/{id}/burnup", sprint.getId()))
                 .andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
         Issue unestimated = issue(sprint, 1, null);
         sprintService.startSprint(sprint.getId());
@@ -190,10 +217,13 @@ class SprintReportIntegrationTest {
 
         assertThat(reports.getBurndown(sprint.getId())).hasSize(6)
                 .extracting(BurndownPointDTO::remainingPoints).containsOnly(0L);
+        List<BurnupPointDTO> burnup = reports.getBurnup(sprint.getId());
+        assertThat(burnup).hasSize(6).extracting(BurnupPointDTO::completedPoints).containsOnly(0L);
+        assertThat(burnup).extracting(BurnupPointDTO::totalPoints).containsOnly(0L);
     }
 
     @Test
-    void burndownOrdersRecordedTimesAndBreaksTiesById() {
+    void chartsOrderRecordedTimesAndBreakTiesById() {
         Sprint sprint = sprint(project, "Same-day completions");
         ZonedDateTime time = ZonedDateTime.parse("2026-11-01T10:00:00Z");
         progress.save(SprintProgress.builder().sprint(sprint).kind(SprintProgress.Kind.END)
@@ -207,6 +237,10 @@ class SprintReportIntegrationTest {
                 new BurndownPointDTO(time.toInstant(), 7),
                 new BurndownPointDTO(time.toInstant(), 5),
                 new BurndownPointDTO(time.plusHours(1).toInstant(), 2));
+        assertThat(reports.getBurnup(sprint.getId())).containsExactly(
+                new BurnupPointDTO(time.toInstant(), 3, 10),
+                new BurnupPointDTO(time.toInstant(), 5, 10),
+                new BurnupPointDTO(time.plusHours(1).toInstant(), 8, 10));
     }
 
     private Sprint sprint(Project owner, String name) {

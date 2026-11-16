@@ -33,7 +33,7 @@ Wartości są w story points, a czas punktu to moment zapisu wpisu.
 
 Punkty wykresu to kolejne wpisy z `sprint_progress` posortowane po czasie, a przy tym samym czasie po ID. Nie dorabiamy punktów dla dni, w których nic się nie zmieniło. Sprint bez estymacji ma na wykresie same zera.
 
-Burndown jest dostępny także podczas trwania sprintu; jeśli nie ma żadnych wpisów historii, zwraca pustą listę.
+Burndown i burnup są dostępne także podczas trwania sprintu; jeśli nie ma żadnych wpisów historii, zwracają pustą listę.
 
 ## Brak historii
 

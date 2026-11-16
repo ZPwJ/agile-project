@@ -5,6 +5,7 @@ import io.github.student.agile.exception.definition.StateConflictException;
 import io.github.student.agile.resource.domain.Sprint;
 import io.github.student.agile.resource.domain.SprintProgress;
 import io.github.student.agile.resource.dto.BurndownPointDTO;
+import io.github.student.agile.resource.dto.BurnupPointDTO;
 import io.github.student.agile.resource.dto.SprintReportDTO;
 import io.github.student.agile.resource.repository.SprintProgressRepository;
 import io.github.student.agile.resource.repository.SprintRepository;
@@ -53,6 +54,14 @@ public class SprintReportService {
         return progressRepository.findAllBySprintIdOrderByCapturedAtAscIdAsc(sprintID).stream()
                 .map(point -> new BurndownPointDTO(point.getCapturedAt().toInstant(),
                         Math.max(0, point.getTotalPoints() - point.getCompletedPoints())))
+                .toList();
+    }
+
+    public List<BurnupPointDTO> getBurnup(Integer sprintID) {
+        requireSprint(sprintID);
+        return progressRepository.findAllBySprintIdOrderByCapturedAtAscIdAsc(sprintID).stream()
+                .map(point -> new BurnupPointDTO(point.getCapturedAt().toInstant(),
+                        point.getCompletedPoints(), point.getTotalPoints()))
                 .toList();
     }
 

@@ -1,6 +1,7 @@
 package io.github.student.agile.resource.controller;
 
 import io.github.student.agile.resource.dto.BurndownPointDTO;
+import io.github.student.agile.resource.dto.BurnupPointDTO;
 import io.github.student.agile.resource.dto.SprintReportDTO;
 import io.github.student.agile.resource.service.SprintReportService;
 import lombok.RequiredArgsConstructor;
@@ -26,5 +27,10 @@ public class SprintReportRestController {
     @GetMapping("/{sprintID}/burndown")
     public List<BurndownPointDTO> getBurndown(@PathVariable Integer sprintID) {
         return reportService.getBurndown(sprintID);
+    }
+
+    @GetMapping("/{sprintID}/burnup")
+    public List<BurnupPointDTO> getBurnup(@PathVariable Integer sprintID) {
+        return reportService.getBurnup(sprintID);
     }
 }

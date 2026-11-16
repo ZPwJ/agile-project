@@ -227,7 +227,16 @@ Requires Java 21 and Maven:
 mvn verify
 ```
 
-Tests run on an in-memory H2 database, so Docker and `.env` are not needed. The JaCoCo report is generated in `target/site/jacoco/index.html`.
+Alternatively, without installing Java or Maven locally:
+
+```bash
+docker run --rm -v "$PWD:/app" -v agile-maven-cache:/root/.m2 -w /app \
+  maven:3.9.9-eclipse-temurin-21 mvn clean verify
+```
+
+Tests use an in-memory H2 database and do not require running application services or `.env`. JaCoCo generates HTML (`index.html`) and XML reports in `target/site/jacoco/`.
+
+Coverage is measured for all production classes, without custom exclusions. Measured with `mvn clean verify`: 132 passing tests and 76.51% instruction coverage (3036/3968).
 
 ## API demo
 

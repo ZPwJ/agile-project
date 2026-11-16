@@ -66,7 +66,26 @@ class SprintComparisonServiceTest {
         when(sprints.findAllByProjectIdAndIsDoneTrue(1)).thenReturn(List.of());
 
         assertThat(service.getComparison(1, null, null)).isEmpty();
+        assertThat(service.getComparisonCsv(1, null, null)).isEqualTo(
+                "projectID,sprintID,name,startDate,endDate,completedIssueCount,incompleteIssueCount,velocity\r\n");
         verifyNoInteractions(progress);
+    }
+
+    @Test
+    void csvEscapesSpecialCharactersAndLeavesMissingDatesEmpty() {
+        Project project = Project.builder().id(1).build();
+        Sprint sprint = Sprint.builder().id(2).project(project).isDone(true)
+                .name("Sprint, \"Zażółć\"\r\nNowa linia").build();
+        when(projects.existsById(1)).thenReturn(true);
+        when(sprints.findAllByProjectIdAndIsDoneTrue(1)).thenReturn(List.of(sprint));
+        when(progress.findAllBySprintIdInAndKindInOrderByCapturedAtAscIdAsc(List.of(2),
+                List.of(SprintProgress.Kind.START, SprintProgress.Kind.END)))
+                .thenReturn(List.of(SprintProgress.builder().sprint(sprint).kind(SprintProgress.Kind.END)
+                        .issueCount(2).completedIssueCount(1).totalPoints(8).completedPoints(3).build()));
+
+        assertThat(service.getComparisonCsv(1, null, null)).isEqualTo(
+                "projectID,sprintID,name,startDate,endDate,completedIssueCount,incompleteIssueCount,velocity\r\n"
+                        + "1,2,\"Sprint, \"\"Zażółć\"\"\r\nNowa linia\",,,1,1,3\r\n");
     }
 
     @Test

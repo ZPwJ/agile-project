@@ -217,7 +217,8 @@ public class IssueServiceImpl implements IssueService{
         return project.getBacklog()
                 .getIssues()
                 .stream()
-                .filter(issue -> DONE.getStatusID().equals(issue.getIssueType().getId()))
+                .filter(issue -> issue.getIssueStatus() != null
+                        && DONE.getStatusID().equals(issue.getIssueStatus().getId()))
                 .map(issueGeneralDTOMapper::map)
                 .collect(Collectors.toList());
     }

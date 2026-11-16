@@ -5,6 +5,7 @@ import io.github.student.agile.resource.domain.Project;
 import io.github.student.agile.resource.domain.Sprint;
 import io.github.student.agile.resource.domain.SprintProgress;
 import io.github.student.agile.resource.dto.BurndownPointDTO;
+import io.github.student.agile.resource.dto.BurnupPointDTO;
 import io.github.student.agile.resource.dto.SprintReportDTO;
 import io.github.student.agile.resource.repository.SprintProgressRepository;
 import io.github.student.agile.resource.repository.SprintRepository;
@@ -116,6 +117,20 @@ class SprintReportServiceTest {
                         .totalPoints(2).completedPoints(3).build()));
 
         assertThat(service.getBurndown(1)).extracting(BurndownPointDTO::remainingPoints).containsExactly(0L);
+    }
+
+    @Test
+    void burnupUsesRecordedScopeAndCompletedWorkWithoutInventingOrAccumulatingPoints() {
+        ZonedDateTime observed = sprint.getStartDate().plusDays(2);
+        when(progress.findAllBySprintIdOrderByCapturedAtAscIdAsc(1)).thenReturn(List.of(
+                SprintProgress.builder().kind(SprintProgress.Kind.CHANGE).capturedAt(observed)
+                        .totalPoints(13).completedPoints(8).build(),
+                SprintProgress.builder().kind(SprintProgress.Kind.END).capturedAt(sprint.getEndDate())
+                        .totalPoints(5).completedPoints(3).build()));
+
+        assertThat(service.getBurnup(1)).containsExactly(
+                new BurnupPointDTO(observed.toInstant(), 8, 13),
+                new BurnupPointDTO(sprint.getEndDate().toInstant(), 3, 5));
     }
 
     private SprintProgress point(SprintProgress.Kind kind, int count, int done, long total, long completed) {

@@ -27,5 +27,6 @@ public interface ExceptionMessages {
     String COMMENT_DOES_NOT_EXISTS = "Comment with given ID does not exists";
     String FORBIDDEN_COMMENT_ACCESS = "It is not allowed to modify or delete comment of another user";
     String NEGATIVE_ESTIMATION = "Issue estimation cannot be negative";
+    String INVALID_DATE_RANGE = "Parameter 'from' must not be later than 'to'";
     String USERS_NUMBER_EXCEEDED = "The maximum number of users has been exceeded";
 }

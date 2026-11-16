@@ -1,6 +1,7 @@
 package io.github.student.agile.service;
 
 import io.github.student.agile.config.TestConfiguration;
+import io.github.student.agile.exception.definition.InvalidRequestException;
 import io.github.student.agile.exception.definition.ResourceNotFoundException;
 import io.github.student.agile.resource.domain.Issue;
 import io.github.student.agile.resource.domain.Project;
@@ -27,6 +28,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 
+import java.time.LocalDate;
 import java.time.ZonedDateTime;
 import java.util.List;
 
@@ -34,12 +36,14 @@ import static io.github.student.agile.builder.IssueBuilder.createIssueEntity;
 import static io.github.student.agile.builder.ProjectBuilder.createProjectEntity;
 import static io.github.student.agile.builder.SprintBuilder.createSprintEntity;
 import static io.github.student.agile.builder.UserBuilder.createCurrentLoggedInUser;
+import static io.github.student.agile.exception.dictionary.ExceptionMessages.INVALID_DATE_RANGE;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.PROJECT_DOES_NOT_EXISTS;
 import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.CODE_REVIEW;
 import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.DONE;
 import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.IN_PROGRESS;
 import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.IN_TESTS;
 import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.TO_DO;
+import static io.github.student.agile.resource.service.analytics.SprintProgressCalculator.REPORT_ZONE;
 import static java.lang.Boolean.FALSE;
 import static java.lang.Boolean.TRUE;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -110,7 +114,7 @@ public class SprintComparisonServiceTest {
         sprintService.stopSprint(project.getId());
 
         //when
-        SprintComparisonDTO comparison = sprintComparisonService.compareSprints(project.getId());
+        SprintComparisonDTO comparison = sprintComparisonService.compareSprints(project.getId(), null, null);
 
         //then
         assertEquals(project.getId(), comparison.getProjectID());
@@ -150,7 +154,7 @@ public class SprintComparisonServiceTest {
         sprintService.stopSprint(project.getId());
 
         //when
-        SprintResult result = sprintComparisonService.compareSprints(project.getId()).getSprints().get(0);
+        SprintResult result = sprintComparisonService.compareSprints(project.getId(), null, null).getSprints().get(0);
         SprintReportDTO report = sprintReportService.getSprintReport(sprint.getId());
 
         //then
@@ -174,7 +178,7 @@ public class SprintComparisonServiceTest {
         sprintService.stopSprint(project.getId());
 
         //when
-        List<SprintResult> sprints = sprintComparisonService.compareSprints(project.getId()).getSprints();
+        List<SprintResult> sprints = sprintComparisonService.compareSprints(project.getId(), null, null).getSprints();
 
         //then
         assertEquals(1, sprints.size());
@@ -194,7 +198,7 @@ public class SprintComparisonServiceTest {
         Sprint sameStartAsNewest = finishedSprint(project, "Same start", ZonedDateTime.parse("2026-10-15T09:00:00+02:00"));
 
         //when
-        List<SprintResult> sprints = sprintComparisonService.compareSprints(project.getId()).getSprints();
+        List<SprintResult> sprints = sprintComparisonService.compareSprints(project.getId(), null, null).getSprints();
 
         //then
         assertEquals(
@@ -219,7 +223,7 @@ public class SprintComparisonServiceTest {
         addIssue(planned, 3);
 
         //when
-        List<SprintResult> sprints = sprintComparisonService.compareSprints(project.getId()).getSprints();
+        List<SprintResult> sprints = sprintComparisonService.compareSprints(project.getId(), null, null).getSprints();
 
         //then
         assertEquals(List.of(finished.getId()), sprints.stream().map(SprintResult::sprintID).toList());
@@ -239,7 +243,7 @@ public class SprintComparisonServiceTest {
         sprintService.stopSprint(project.getId());
 
         //when
-        SprintComparisonDTO comparison = sprintComparisonService.compareSprints(project.getId());
+        SprintComparisonDTO comparison = sprintComparisonService.compareSprints(project.getId(), null, null);
 
         //then
         assertEquals(1, comparison.getSprints().size());
@@ -254,7 +258,7 @@ public class SprintComparisonServiceTest {
         Sprint sprint = finishedSprint(project, "Legacy", null);
 
         //when
-        SprintResult result = sprintComparisonService.compareSprints(project.getId()).getSprints().get(0);
+        SprintResult result = sprintComparisonService.compareSprints(project.getId(), null, null).getSprints().get(0);
 
         //then
         assertEquals(sprint.getId(), result.sprintID());
@@ -273,7 +277,7 @@ public class SprintComparisonServiceTest {
         plannedSprint(project, "Planned");
 
         //when
-        SprintComparisonDTO comparison = sprintComparisonService.compareSprints(project.getId());
+        SprintComparisonDTO comparison = sprintComparisonService.compareSprints(project.getId(), null, null);
 
         //then
         assertEquals(project.getId(), comparison.getProjectID());
@@ -284,10 +288,172 @@ public class SprintComparisonServiceTest {
     public void compareSprints_notExistingProject_throwsResourceNotFoundException() {
 
         //when
-        Exception exception = assertThrows(ResourceNotFoundException.class, () -> sprintComparisonService.compareSprints(-1));
+        Exception exception = assertThrows(ResourceNotFoundException.class, () -> sprintComparisonService.compareSprints(-1, null, null));
 
         //then
         assertEquals(PROJECT_DOES_NOT_EXISTS, exception.getMessage());
+    }
+
+    @Test
+    public void compareSprints_dateRange_returnsSprintsOverlappingRange() {
+
+        //given
+        AutumnSprints sprints = givenAutumnSprints();
+        LocalDate from = LocalDate.parse("2026-10-10");
+        LocalDate to = LocalDate.parse("2026-11-01");
+
+        //when
+        SprintComparisonDTO comparison = sprintComparisonService.compareSprints(project.getId(), from, to);
+
+        //then
+        assertEquals(List.of(sprints.october().getId(), sprints.turnOfMonth().getId()), sprintIDs(comparison));
+        assertEquals(from, comparison.getFrom());
+        assertEquals(to, comparison.getTo());
+        assertEquals("Europe/Warsaw", comparison.getTimeZone());
+    }
+
+    @Test
+    public void compareSprints_onlyFrom_returnsSprintsEndedOnOrAfterIt() {
+
+        //given
+        AutumnSprints sprints = givenAutumnSprints();
+
+        //when
+        SprintComparisonDTO comparison = sprintComparisonService.compareSprints(project.getId(), LocalDate.parse("2026-10-14"), null);
+
+        //then: October ended on the first day of the range; the sprint without dates cannot be placed in time
+        assertEquals(List.of(sprints.october().getId(), sprints.turnOfMonth().getId(), sprints.november().getId()), sprintIDs(comparison));
+        assertNull(comparison.getTo());
+    }
+
+    @Test
+    public void compareSprints_onlyTo_returnsSprintsStartedOnOrBeforeIt() {
+
+        //given
+        AutumnSprints sprints = givenAutumnSprints();
+
+        //when
+        SprintComparisonDTO comparison = sprintComparisonService.compareSprints(project.getId(), null, LocalDate.parse("2026-10-01"));
+
+        //then: October started on the last day of the range
+        assertEquals(List.of(sprints.september().getId(), sprints.october().getId()), sprintIDs(comparison));
+        assertNull(comparison.getFrom());
+    }
+
+    @Test
+    public void compareSprints_withoutDateRange_includesSprintsWithoutDates() {
+
+        //given
+        AutumnSprints sprints = givenAutumnSprints();
+
+        //when
+        SprintComparisonDTO comparison = sprintComparisonService.compareSprints(project.getId(), null, null);
+
+        //then
+        assertEquals(5, comparison.getSprints().size());
+        assertEquals(sprints.withoutDates().getId(), comparison.getSprints().get(0).sprintID());
+    }
+
+    @Test
+    public void compareSprints_dateRangeWithoutMatchingSprints_returnsEmptyList() {
+
+        //given
+        givenAutumnSprints();
+
+        //when
+        SprintComparisonDTO comparison = sprintComparisonService.compareSprints(
+                project.getId(), LocalDate.parse("2027-01-01"), LocalDate.parse("2027-01-31"));
+
+        //then
+        assertTrue(comparison.getSprints().isEmpty());
+    }
+
+    @Test
+    public void compareSprints_dateRange_returnsOnlySprintsOfGivenProject() {
+
+        //given: both projects have a sprint in the range
+        Project otherProject = projectRepository.save(createProjectEntity());
+        finishedSprint(otherProject, "Other project", ZonedDateTime.parse("2026-10-01T09:00:00+02:00"), ZonedDateTime.parse("2026-10-14T17:00:00+02:00"));
+        Sprint sprint = finishedSprint(project, "Sprint", ZonedDateTime.parse("2026-10-01T09:00:00+02:00"), ZonedDateTime.parse("2026-10-14T17:00:00+02:00"));
+
+        //when
+        SprintComparisonDTO comparison = sprintComparisonService.compareSprints(
+                project.getId(), LocalDate.parse("2026-10-01"), LocalDate.parse("2026-10-31"));
+
+        //then
+        assertEquals(List.of(sprint.getId()), sprintIDs(comparison));
+    }
+
+    @Test
+    public void compareSprints_dateRange_keepsMetricsOfMatchingSprints() {
+
+        //given
+        Sprint sprint = plannedSprint(project, "Sprint 1");
+        complete(addIssueAndStart(sprint, 5));
+        addIssue(sprint, 3);
+        sprintService.stopSprint(project.getId());
+        LocalDate today = LocalDate.now(REPORT_ZONE);
+
+        //when
+        SprintComparisonDTO current = sprintComparisonService.compareSprints(project.getId(), today, today);
+        SprintComparisonDTO past = sprintComparisonService.compareSprints(project.getId(), today.minusDays(30), today.minusDays(1));
+
+        //then
+        assertEquals(1, current.getSprints().size());
+        assertEquals(1, current.getSprints().get(0).completedIssueCount());
+        assertEquals(1, current.getSprints().get(0).uncompletedIssueCount());
+        assertEquals(5, current.getSprints().get(0).velocity());
+        assertTrue(past.getSprints().isEmpty());
+    }
+
+    @Test
+    public void compareSprints_fromLaterThanTo_throwsInvalidRequestException() {
+
+        //given
+        LocalDate from = LocalDate.parse("2026-11-16");
+        LocalDate to = LocalDate.parse("2026-11-15");
+
+        //when
+        Exception exception = assertThrows(InvalidRequestException.class,
+                () -> sprintComparisonService.compareSprints(project.getId(), from, to));
+
+        //then
+        assertEquals(INVALID_DATE_RANGE, exception.getMessage());
+    }
+
+    @Test
+    public void compareSprints_invalidDateRangeOfNotExistingProject_isRejectedAsInvalidRequest() {
+
+        //given: parameters are validated before the project is looked up
+        LocalDate from = LocalDate.parse("2026-11-16");
+        LocalDate to = LocalDate.parse("2026-11-15");
+
+        //when
+        Exception exception = assertThrows(InvalidRequestException.class, () -> sprintComparisonService.compareSprints(-1, from, to));
+
+        //then
+        assertEquals(INVALID_DATE_RANGE, exception.getMessage());
+    }
+
+    /** Finished sprints of the project, saved in a different order than they were run. */
+    private record AutumnSprints(Sprint september, Sprint october, Sprint turnOfMonth, Sprint november, Sprint withoutDates) {
+    }
+
+    private AutumnSprints givenAutumnSprints() {
+        Sprint november = finishedSprint(project, "November",
+                ZonedDateTime.parse("2026-11-16T09:00:00+01:00"), ZonedDateTime.parse("2026-11-29T17:00:00+01:00"));
+        Sprint september = finishedSprint(project, "September",
+                ZonedDateTime.parse("2026-09-01T09:00:00+02:00"), ZonedDateTime.parse("2026-09-14T17:00:00+02:00"));
+        Sprint turnOfMonth = finishedSprint(project, "Turn of month",
+                ZonedDateTime.parse("2026-10-28T09:00:00+01:00"), ZonedDateTime.parse("2026-11-10T17:00:00+01:00"));
+        Sprint october = finishedSprint(project, "October",
+                ZonedDateTime.parse("2026-10-01T09:00:00+02:00"), ZonedDateTime.parse("2026-10-14T17:00:00+02:00"));
+        Sprint withoutDates = finishedSprint(project, "Without dates", null);
+        return new AutumnSprints(september, october, turnOfMonth, november, withoutDates);
+    }
+
+    private static List<Integer> sprintIDs(SprintComparisonDTO comparison) {
+        return comparison.getSprints().stream().map(SprintResult::sprintID).toList();
     }
 
     private Sprint plannedSprint(Project sprintProject, String name) {
@@ -297,11 +463,15 @@ public class SprintComparisonServiceTest {
     }
 
     private Sprint finishedSprint(Project sprintProject, String name, ZonedDateTime startedAt) {
+        return finishedSprint(sprintProject, name, startedAt, startedAt == null ? null : startedAt.plusDays(14));
+    }
+
+    private Sprint finishedSprint(Project sprintProject, String name, ZonedDateTime startedAt, ZonedDateTime endedAt) {
         Sprint sprint = createSprintEntity(sprintProject, FALSE);
         sprint.setName(name);
         sprint.setIsDone(TRUE);
         sprint.setStartedAt(startedAt);
-        sprint.setEndedAt(startedAt == null ? null : startedAt.plusDays(14));
+        sprint.setEndedAt(endedAt);
         return sprintRepository.save(sprint);
     }
 

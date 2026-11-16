@@ -1,5 +1,6 @@
 package io.github.student.agile.service;
 
+import io.github.student.agile.exception.definition.InvalidRequestException;
 import io.github.student.agile.exception.definition.ResourceNotFoundException;
 import io.github.student.agile.resource.domain.Sprint;
 import io.github.student.agile.resource.domain.SprintIssueEvent;
@@ -13,6 +14,7 @@ import io.github.student.agile.resource.service.analytics.SprintMetricsCalculato
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.time.LocalDate;
 import java.time.ZonedDateTime;
 import java.util.HashSet;
 import java.util.List;
@@ -67,7 +69,7 @@ class SprintComparisonServiceImplTest {
                 event(10, 1, COMPLETED, 5)));
 
         //when
-        List<SprintResult> sprints = service.compareSprints(PROJECT_ID).getSprints();
+        List<SprintResult> sprints = service.compareSprints(PROJECT_ID, null, null).getSprints();
 
         //then: one query for all sprints, and events are not mixed between sprints
         verify(eventRepository, times(1)).findAllBySprintIDInOrderByOccurredAtAscIdAsc(any());
@@ -84,7 +86,7 @@ class SprintComparisonServiceImplTest {
         when(sprintRepository.findAllByProjectIdAndIsDoneTrue(PROJECT_ID)).thenReturn(List.of(legacy));
 
         //when
-        List<SprintResult> sprints = service.compareSprints(PROJECT_ID).getSprints();
+        List<SprintResult> sprints = service.compareSprints(PROJECT_ID, null, null).getSprints();
 
         //then
         verifyNoInteractions(eventRepository);
@@ -98,10 +100,42 @@ class SprintComparisonServiceImplTest {
         when(projectRepository.existsById(PROJECT_ID)).thenReturn(false);
 
         //when
-        assertThrows(ResourceNotFoundException.class, () -> service.compareSprints(PROJECT_ID));
+        assertThrows(ResourceNotFoundException.class, () -> service.compareSprints(PROJECT_ID, null, null));
 
         //then
         verifyNoInteractions(sprintRepository, eventRepository);
+    }
+
+    @Test
+    void compareSprints_dateRange_loadsEventsOnlyOfMatchingSprints() {
+
+        //given
+        Sprint before = sprintWithHistory(10, STARTED_AT);
+        Sprint matching = sprintWithHistory(20, STARTED_AT.plusDays(14));
+        when(sprintRepository.findAllByProjectIdAndIsDoneTrue(PROJECT_ID)).thenReturn(List.of(before, matching));
+        when(eventRepository.findAllBySprintIDInOrderByOccurredAtAscIdAsc(List.of(20))).thenReturn(List.of(
+                event(20, 2, SCOPE_AT_START, 8),
+                event(20, 2, COMPLETED, 8)));
+
+        //when
+        List<SprintResult> sprints = service.compareSprints(PROJECT_ID, LocalDate.parse("2026-11-10"), null).getSprints();
+
+        //then
+        verify(eventRepository).findAllBySprintIDInOrderByOccurredAtAscIdAsc(List.of(20));
+        assertEquals(1, sprints.size());
+        assertEquals(20, sprints.get(0).sprintID());
+        assertEquals(8, sprints.get(0).velocity());
+    }
+
+    @Test
+    void compareSprints_fromLaterThanTo_doesNotQueryDatabase() {
+
+        //when
+        assertThrows(InvalidRequestException.class,
+                () -> service.compareSprints(PROJECT_ID, LocalDate.parse("2026-11-16"), LocalDate.parse("2026-11-15")));
+
+        //then
+        verifyNoInteractions(projectRepository, sprintRepository, eventRepository);
     }
 
     private static Sprint sprintWithHistory(Integer id, ZonedDateTime startedAt) {

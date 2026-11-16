@@ -26,11 +26,14 @@ import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.time.ZonedDateTime;
+
 import static io.github.student.agile.builder.IssueBuilder.createIssueEntity;
 import static io.github.student.agile.builder.ProjectBuilder.createProjectEntity;
 import static io.github.student.agile.builder.SprintBuilder.SPRINT_NAME;
 import static io.github.student.agile.builder.SprintBuilder.createSprintEntity;
 import static io.github.student.agile.builder.UserBuilder.createCurrentLoggedInUser;
+import static io.github.student.agile.exception.dictionary.ExceptionMessages.INVALID_DATE_RANGE;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.PROJECT_DOES_NOT_EXISTS;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.SPRINT_ALREADY_FINISHED;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.SPRINT_DOES_NOT_EXISTS;
@@ -45,6 +48,7 @@ import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.matchesPattern;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -281,6 +285,75 @@ public class AnalyticsRestControllerIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status", is(400)))
                 .andExpect(jsonPath("$.message", is("Invalid value 'abc' for parameter 'projectID'")));
+    }
+
+    @Test
+    public void compareProjectSprints_withDateRange_returnsOverlappingSprints() throws Exception {
+
+        finishedSprint("September", "2026-09-01T09:00:00+02:00", "2026-09-14T17:00:00+02:00");
+        Sprint october = finishedSprint("October", "2026-10-01T09:00:00+02:00", "2026-10-14T17:00:00+02:00");
+        Sprint turnOfMonth = finishedSprint("Turn of month", "2026-10-28T09:00:00+01:00", "2026-11-10T17:00:00+01:00");
+        finishedSprint("November", "2026-11-16T09:00:00+01:00", "2026-11-29T17:00:00+01:00");
+
+        mvc.perform(get(ANALYTICS_BASE_URL + "/projects/{id}/sprints", project.getId())
+                        .param("from", "2026-10-14")
+                        .param("to", "2026-10-28"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.projectID", is(project.getId())))
+                .andExpect(jsonPath("$.from", is("2026-10-14")))
+                .andExpect(jsonPath("$.to", is("2026-10-28")))
+                .andExpect(jsonPath("$.timeZone", is("Europe/Warsaw")))
+                .andExpect(jsonPath("$.sprints", hasSize(2)))
+                .andExpect(jsonPath("$.sprints[0].sprintID", is(october.getId())))
+                .andExpect(jsonPath("$.sprints[0].sprintName", is("October")))
+                .andExpect(jsonPath("$.sprints[1].sprintID", is(turnOfMonth.getId())));
+    }
+
+    @Test
+    public void compareProjectSprints_withoutDateRange_returnsNullBounds() throws Exception {
+
+        finishedSprint("October", "2026-10-01T09:00:00+02:00", "2026-10-14T17:00:00+02:00");
+
+        mvc.perform(get(ANALYTICS_BASE_URL + "/projects/{id}/sprints", project.getId())
+                        .param("from", "")
+                        .param("to", ""))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.from", nullValue()))
+                .andExpect(jsonPath("$.to", nullValue()))
+                .andExpect(jsonPath("$.sprints", hasSize(1)));
+    }
+
+    @Test
+    public void compareProjectSprints_fromLaterThanTo_returns400() throws Exception {
+
+        mvc.perform(get(ANALYTICS_BASE_URL + "/projects/{id}/sprints", project.getId())
+                        .param("from", "2026-11-16")
+                        .param("to", "2026-11-15"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status", is(400)))
+                .andExpect(jsonPath("$.error", is("Bad Request")))
+                .andExpect(jsonPath("$.message", is(INVALID_DATE_RANGE)))
+                .andExpect(jsonPath("$.path", is(ANALYTICS_BASE_URL + "/projects/" + project.getId() + "/sprints")));
+    }
+
+    @Test
+    public void compareProjectSprints_invalidDate_returns400() throws Exception {
+
+        for (String[] invalid : new String[][]{{"from", "2026-13-01"}, {"to", "16.11.2026"}, {"from", "abc"}}) {
+            mvc.perform(get(ANALYTICS_BASE_URL + "/projects/{id}/sprints", project.getId()).param(invalid[0], invalid[1]))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.status", is(400)))
+                    .andExpect(jsonPath("$.message", is("Invalid value '%s' for parameter '%s'".formatted(invalid[1], invalid[0]))));
+        }
+    }
+
+    private Sprint finishedSprint(String name, String startedAt, String endedAt) {
+        Sprint sprint = createSprintEntity(project, Boolean.FALSE);
+        sprint.setName(name);
+        sprint.setIsDone(Boolean.TRUE);
+        sprint.setStartedAt(ZonedDateTime.parse(startedAt));
+        sprint.setEndedAt(ZonedDateTime.parse(endedAt));
+        return sprintRepository.save(sprint);
     }
 
     private Sprint startedSprintWithIssue(Integer estimation) {

@@ -5,11 +5,12 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDate;
 import java.time.ZonedDateTime;
 import java.util.List;
 
 /**
- * Comparison of the finished sprints of one project (WF-5).
+ * Comparison of the finished sprints of one project (WF-5), optionally filtered by date (WF-6).
  * <p>
  * {@link #sprints} are ordered from the oldest to the newest: by {@code startedAt} ascending, sprints without
  * {@code startedAt} (finished before the analytics module recorded history) first, ties broken by sprint ID.
@@ -22,6 +23,10 @@ import java.util.List;
 public class SprintComparisonDTO {
 
     private Integer projectID;
+    /** Applied date filter: inclusive days in {@link #timeZone}; {@code null} when the bound was not given. */
+    private LocalDate from;
+    private LocalDate to;
+    private String timeZone;
     private String estimationUnit;
     private List<SprintResult> sprints;
 

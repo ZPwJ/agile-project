@@ -9,24 +9,27 @@ import io.github.student.agile.resource.dto.analytics.SprintReportDTO;
 import io.github.student.agile.resource.repository.ProjectRepository;
 import io.github.student.agile.resource.repository.SprintIssueEventRepository;
 import io.github.student.agile.resource.repository.SprintRepository;
+import io.github.student.agile.resource.service.analytics.SprintDateRange;
 import io.github.student.agile.resource.service.analytics.SprintMetrics;
 import io.github.student.agile.resource.service.analytics.SprintMetricsCalculator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.PROJECT_DOES_NOT_EXISTS;
+import static io.github.student.agile.resource.service.analytics.SprintProgressCalculator.REPORT_ZONE;
 import static java.util.Comparator.naturalOrder;
 import static java.util.Comparator.nullsFirst;
 import static java.util.stream.Collectors.groupingBy;
 
 /**
- * Compares the finished sprints of a project (WF-5). Metrics of every sprint come from {@link SprintMetricsCalculator},
- * so they are equal to the ones in the sprint report.
+ * Compares the finished sprints of a project (WF-5), optionally limited to a date range (WF-6, {@link SprintDateRange}).
+ * Metrics of every sprint come from {@link SprintMetricsCalculator}, so they are equal to the ones in the sprint report.
  */
 @Service
 @Transactional(readOnly = true)
@@ -46,21 +49,30 @@ public class SprintComparisonServiceImpl implements SprintComparisonService {
     private final SprintIssueEventRepository sprintIssueEventRepository;
     private final SprintMetricsCalculator sprintMetricsCalculator;
 
+    /**
+     * Parameters are validated before the project is looked up. Sprints of the project are loaded with one query and
+     * filtered in memory (a project has few sprints); events, the bulk of the data, are loaded only for the matching ones.
+     */
     @Override
-    public SprintComparisonDTO compareSprints(Integer projectID) {
+    public SprintComparisonDTO compareSprints(Integer projectID, LocalDate from, LocalDate to) {
 
+        SprintDateRange dateRange = new SprintDateRange(from, to);
         if (!projectRepository.existsById(projectID)) {
             throw new ResourceNotFoundException(PROJECT_DOES_NOT_EXISTS);
         }
 
         List<Sprint> sprints = sprintRepository.findAllByProjectIdAndIsDoneTrue(projectID)
                 .stream()
+                .filter(dateRange::includes)
                 .sorted(CHRONOLOGICAL_ORDER)
                 .toList();
         Map<Integer, List<SprintIssueEvent>> eventsBySprint = loadEvents(sprints);
 
         return SprintComparisonDTO.builder()
                 .projectID(projectID)
+                .from(from)
+                .to(to)
+                .timeZone(REPORT_ZONE.getId())
                 .estimationUnit(SprintReportDTO.STORY_POINTS)
                 .sprints(sprints.stream()
                         .map(sprint -> toResult(sprint, eventsBySprint.getOrDefault(sprint.getId(), List.of())))

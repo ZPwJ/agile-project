@@ -5,13 +5,13 @@ porównanie sprintów z filtrowaniem po datach oraz eksport CSV. Prace rozpoczę
 
 ## Podział prac
 
-| Osoba                              | Zakres | Wymagania |
-|------------------------------------|---|---|
-| A – Kamil Oleksiak (JasperBTA)     | cykl życia sprintu, historia zdarzeń sprintu (#5, #6, #7, #8) | WF-1, WF-2, WF-3, WF-4 (dane) |
-| B - Jakub Sawicki (JakubSawicki03) | obsługa błędów API, velocity, raport podsumowujący sprint (#10, #11, #12) | WF-1, WF-2, WNF |
-| C - Nikodem Wełna (shoxxie01)      | dane do wykresów burndown i burnup (#13, #14) | WF-3, WF-4 |
-| D                                  | porównanie sprintów projektu, filtrowanie po dacie (#15, #16) | WF-5, WF-6 |
-| E                                  | generator i eksport CSV, pomiar pokrycia JaCoCo, testy kontrolerów, instrukcja uruchomienia (#17, #18, #19, #20, #21) | WF-7, WNF |
+| Osoba                                  | Zakres | Wymagania |
+|----------------------------------------|---|---|
+| A – Kamil Oleksiak (JasperBTA)         | cykl życia sprintu, historia zdarzeń sprintu (#5, #6, #7, #8) | WF-1, WF-2, WF-3, WF-4 (dane) |
+| B - Jakub Sawicki (JakubSawicki03)     | obsługa błędów API, velocity, raport podsumowujący sprint (#10, #11, #12) | WF-1, WF-2, WNF |
+| C - Nikodem Wełna (shoxxie01)          | dane do wykresów burndown i burnup (#13, #14) | WF-3, WF-4 |
+| D - Mateusz Słupski (SlupskiMateusz02) | porównanie sprintów projektu, filtrowanie po dacie (#15, #16) | WF-5, WF-6 |
+| E                                      | generator i eksport CSV, pomiar pokrycia JaCoCo, testy kontrolerów, instrukcja uruchomienia (#17, #18, #19, #20, #21) | WF-7, WNF |
 
 Wspólnie: reguły obliczeń i kontrakt API (#4), dane demonstracyjne (#9), Pull Request i oddanie projektu (#22).
 
@@ -25,6 +25,8 @@ Wspólnie: reguły obliczeń i kontrakt API (#4), dane demonstracyjne (#9), Pull
 | `SprintServiceImpl`, `IssueServiceImpl` | zapis zdarzeń przy starcie sprintu, dodaniu i usunięciu zadania, zmianie estymacji i ukończeniu zadania | bez historii nie da się odtworzyć przebiegu sprintu |
 | `ExceptionMessages` | komunikaty `SPRINT_ALREADY_FINISHED`, `ISSUE_ALREADY_DONE` | nowe blokady |
 | `IssueServiceImpl` | tworzenie i edycja zadania odrzucają ujemną estymację (`NEGATIVE_ESTIMATION`, HTTP 400) | ujemne story points dawałyby ujemne velocity i wartości wykresów (WF-3) |
+| `SprintRepository` | metoda `findAllByProjectIdAndIsDoneTrue` | zakończone sprinty projektu jednym zapytaniem (WF-5) |
+| `ExceptionMessages` | komunikat `INVALID_DATE_RANGE` | czytelny błąd 400 dla `from` późniejszego niż `to` (WF-6) |
 | serwisy `*ServiceImpl` | `new RuntimeException(...)` zastąpione typowanymi wyjątkami z `exception.definition`; komunikaty bez zmian | wcześniej każdy błąd biznesowy kończył się HTTP 500; typowane wyjątki dziedziczą po `RuntimeException`, więc istniejące testy działają bez zmian |
 
 ## Nowe elementy
@@ -33,7 +35,8 @@ Wspólnie: reguły obliczeń i kontrakt API (#4), dane demonstracyjne (#9), Pull
   (estymacja w chwili zdarzenia), `occurredAt`. Identyfikatory nie są kluczami obcymi, więc historia zostaje po usunięciu zadania.
 - **Enum `SprintIssueEventType`**: `SCOPE_AT_START`, `ADDED`, `REMOVED`, `ESTIMATION_CHANGED`, `COMPLETED`.
   Zdarzenia są zapisywane tylko dla trwającego sprintu; zmiany sprzed startu obejmuje `SCOPE_AT_START`.
-- **Repozytorium `SprintIssueEventRepository`**: zdarzenia sprintu w kolejności chronologicznej.
+- **Repozytorium `SprintIssueEventRepository`**: zdarzenia sprintu w kolejności chronologicznej; dla zestawienia
+  sprintów zdarzenia wielu sprintów naraz (`findAllBySprintIDInOrderByOccurredAtAscIdAsc`).
 - **Migracje**: projekt nie używa narzędzia do migracji. Schemat aktualizuje Hibernate (`ddl-auto: update`),
   więc nowa tabela i kolumny powstają przy starcie aplikacji.
 - **Endpointy** (`AnalyticsRestController`):
@@ -43,10 +46,11 @@ Wspólnie: reguły obliczeń i kontrakt API (#4), dane demonstracyjne (#9), Pull
 | GET | `/api/analytics/sprints/{id}/report` | WF-1, WF-2 | gotowe |
 | GET | `/api/analytics/sprints/{id}/burndown` | WF-3 | gotowe |
 | GET | `/api/analytics/sprints/{id}/burnup` | WF-4 | gotowe |
-| GET | `/api/analytics/projects/{id}/sprints?from=&to=` | WF-5, WF-6 | w realizacji |
+| GET | `/api/analytics/projects/{id}/sprints?from=&to=` | WF-5, WF-6 | gotowe |
 | GET | `/api/analytics/projects/{id}/sprints/export.csv?from=&to=` | WF-7 | w realizacji |
 
-Zestawienie obejmuje zakończone sprinty, których okres trwania nachodzi na przedział `from`–`to`.
+Zestawienie obejmuje zakończone sprinty projektu, których okres trwania nachodzi na przedział `from`–`to`
+(szczegóły w sekcji „Porównanie sprintów i filtrowanie”).
 `from` późniejsze niż `to` zwraca 400, nieistniejący sprint lub projekt 404, zmiana zakończonego sprintu 409.
 
 ## Obsługa błędów API
@@ -169,10 +173,10 @@ mvn verify
 ```
 
 Raport JaCoCo powstaje w `target/site/jacoco/index.html`.
-Aktualny wynik (15 listopada 2026 r., po WF-1–WF-4 i obsłudze błędów): 173 testy, wszystkie przechodzą,
-pokrycie instrukcji 74,59% (3106 z 4164). Wymagane minimum to 75%.
+Aktualny wynik (16 listopada 2026 r., po WF-1–WF-6 i obsłudze błędów): 221 testów, wszystkie przechodzą,
+pokrycie instrukcji 75,98% (3347 z 4405). Wymagane minimum to 75%.
 Raport obejmuje cały kod produkcyjny, bez wykluczeń. Nowy kod raportu sprintu, velocity i obsługi błędów ma pokrycie 98,9%,
-kod wykresów burndown i burnup — 100%.
+kod wykresów burndown i burnup — 100%, kod porównania i filtrowania sprintów — 100% instrukcji i gałęzi.
 
 ## Wykresy burndown i burnup — stan realizacji (osoba C)
 
@@ -234,6 +238,79 @@ Dla typowego sprintu (kilkanaście dni, kilkaset zdarzeń) jest to pomijalne; ob
 Testy: `SprintProgressCalculatorTest` (jednostkowe, m.in. zmiany zakresu, strefa czasowa, brak estymacji),
 `SprintChartServiceTest` (pełny cykl sprintu, zgodność z raportem sprintu) i nowe przypadki w `AnalyticsRestControllerIntegrationTest`.
 
+## Porównanie sprintów i filtrowanie — stan realizacji (osoba D)
+
+Zrobione: WF-5 (#15) i WF-6 (#16). Endpoint `GET /api/analytics/projects/{projectID}/sprints?from=&to=`
+w `AnalyticsRestController` zwraca 200, 404 dla nieistniejącego projektu oraz 400 dla nienumerycznego id,
+niepoprawnej daty i `from` późniejszego niż `to`.
+
+```json
+{ "projectID": 1, "from": "2026-10-14", "to": "2026-10-28", "timeZone": "Europe/Warsaw", "estimationUnit": "STORY_POINTS",
+  "sprints": [ { "sprintID": 4, "sprintName": "Sprint 2", "startedAt": "2026-10-01T07:00:00Z", "endedAt": "2026-10-14T15:00:00Z",
+                 "historyAvailable": true, "completedIssueCount": 5, "uncompletedIssueCount": 1, "velocity": 18 },
+               { "sprintID": 5, "sprintName": "Sprint 3", "startedAt": "2026-10-28T08:00:00Z", "endedAt": "2026-11-10T16:00:00Z",
+                 "historyAvailable": true, "completedIssueCount": 0, "uncompletedIssueCount": 3, "velocity": 0 } ] }
+```
+
+Daty sprintu są w ISO-8601 (UTC), granice filtra w formacie `YYYY-MM-DD`.
+
+### Zestawienie (WF-5)
+
+- Obejmuje **zakończone** sprinty (`isDone = true`) wskazanego projektu. Sprint trwający lub planowany nie ma jeszcze
+  końcowych wyników, więc nie jest porównywany.
+- Sprinty bez ukończonych zadań również są w zestawieniu (`completedIssueCount = 0`, `velocity = 0`).
+- `completedIssueCount`, `uncompletedIssueCount` i `velocity` liczy `SprintMetricsCalculator`, więc są równe wartościom
+  z raportu sprintu (WF-1), łącznie z regułami dla zadań bez estymacji, zmian zakresu i zmian estymacji po ukończeniu.
+- **Kolejność: od najstarszego do najnowszego**, rosnąco po `startedAt`. Sprinty bez `startedAt` (zakończone bez zapisanej
+  historii) są na początku, bo rozpoczęły się przed wdrożeniem modułu, czyli przed każdym sprintem z zapisanym startem.
+  Przy równym `startedAt` decyduje rosnące `sprintID`. Sortowanie odbywa się w Javie, bo PostgreSQL i H2 różnie
+  ustawiają `NULL` w `ORDER BY`.
+- Sprint bez historii ma `historyAvailable = false`, a `startedAt` i `endedAt` mogą być `null`; metryki liczone są
+  z bieżących zadań, tak jak w raporcie sprintu.
+- Projekt bez zakończonych sprintów: 200 i pusta lista `sprints`.
+
+### Filtrowanie (WF-6)
+
+- Filtr projektu wynika ze ścieżki: zestawienie nigdy nie zawiera sprintów innych projektów.
+- `from` i `to` są opcjonalne. Obie granice są **włączne** i oznaczają dni kalendarzowe w strefie `Europe/Warsaw`
+  (pole `timeZone`). Odpowiedź zwraca zastosowany filtr w polach `from` i `to` (`null`, gdy granicy nie podano).
+- **Reguła: sprint nachodzi na przedział**, czyli dzień `endedAt` ≥ `from` i dzień `startedAt` ≤ `to`.
+  Przykład dla przedziału 14–28 października: sprinty 1–14 X i 28 X–10 XI są w wyniku, sprinty 1–14 IX i 16–29 XI nie.
+- Tylko `from`: sprinty zakończone tego dnia lub później. Tylko `to`: sprinty rozpoczęte tego dnia lub wcześniej.
+  Pusty parametr (`?from=`) oznacza brak granicy.
+- Sprint bez daty potrzebnej do sprawdzenia granicy (sprint bez historii) nie spełnia filtra, bo nie da się stwierdzić,
+  czy nachodzi na przedział. Bez filtra dat jest w zestawieniu.
+
+| Błąd | HTTP | `message` |
+|---|---|---|
+| `from` późniejsze niż `to` | 400 | `Parameter 'from' must not be later than 'to'` |
+| niepoprawna data, np. `from=2026-13-01` | 400 | `Invalid value '2026-13-01' for parameter 'from'` |
+| nienumeryczne `projectID` | 400 | `Invalid value 'abc' for parameter 'projectID'` |
+| nieistniejący projekt | 404 | `Project with given ID does not exists` |
+
+Parametry są walidowane przed sprawdzeniem projektu, więc zły przedział daje 400 również dla nieistniejącego projektu.
+
+| Klasa | Pakiet | Rola |
+|---|---|---|
+| `SprintDateRange` | `resource.service.analytics` | walidacja przedziału dat i reguła nachodzenia sprintu na przedział (WF-6) |
+| `SprintComparisonService(Impl)` | `resource.service` | zestawienie zakończonych sprintów projektu (WF-5) z filtrem dat (WF-6) |
+| `SprintComparisonDTO` | `resource.dto.analytics` | odpowiedź API; wiersz sprintu to rekord `SprintResult` |
+
+Wydajność (WNF-5): zestawienie wykonuje trzy zapytania niezależnie od liczby sprintów — istnienie projektu,
+zakończone sprinty projektu i zdarzenia wszystkich pasujących sprintów naraz, grupowane po `sprintID`.
+Filtr dat działa w pamięci na sprintach projektu (jest ich niewiele), a zdarzenia, czyli większość danych,
+pobierane są tylko dla sprintów, które przeszły filtr. Gdy żaden sprint nie ma historii, zapytanie o zdarzenia jest pomijane.
+Ograniczenie: dla sprintu bez historii kalkulator czyta jego bieżące zadania, co oznacza jedno dodatkowe zapytanie
+na taki sprint; dotyczy to wyłącznie sprintów sprzed wdrożenia modułu.
+
+Eksport CSV (WF-7) powinien korzystać z `SprintComparisonService.compareSprints(projectID, from, to)`, dzięki czemu
+respektuje te same filtry, kolejność i błędy co zestawienie JSON.
+
+Testy: `SprintDateRangeTest` (jednostkowe: granice przedziału, jedna granica, strefa czasowa, sprinty bez dat),
+`SprintComparisonServiceImplTest` (jednostkowe z Mockito: jedno zapytanie o zdarzenia, brak mieszania zdarzeń między sprintami,
+brak zapytań przy złym przedziale), `SprintComparisonServiceTest` (pełny cykl sprintu, zgodność z raportem sprintu, kolejność,
+izolacja projektów, filtry) i nowe przypadki w `AnalyticsRestControllerIntegrationTest`.
+
 ## Zrealizowane GitHub Issues
 
 | Issue | Tytuł | Osoba |
@@ -247,3 +324,5 @@ Testy: `SprintProgressCalculatorTest` (jednostkowe, m.in. zmiany zakresu, strefa
 | #12 | Raport podsumowujący sprint | B |
 | #13 | Dane do wykresu burndown | C |
 | #14 | Dane do wykresu burnup | C |
+| #15 | Porównanie sprintów projektu | D |
+| #16 | Filtrowanie zestawienia sprintów po dacie | D |

@@ -8,11 +8,15 @@ import io.github.student.agile.resource.service.SprintChartService;
 import io.github.student.agile.resource.service.SprintComparisonService;
 import io.github.student.agile.resource.service.SprintReportService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.time.LocalDate;
 
 @RestController
 @RequestMapping("/api/analytics")
@@ -38,8 +42,15 @@ public class AnalyticsRestController {
         return ResponseEntity.ok(sprintChartService.getBurnup(sprintID));
     }
 
+    /**
+     * @param from optional first day (ISO-8601 {@code YYYY-MM-DD}, inclusive) the sprints must overlap
+     * @param to   optional last day (ISO-8601 {@code YYYY-MM-DD}, inclusive) the sprints must overlap
+     */
     @GetMapping("/projects/{projectID}/sprints")
-    public ResponseEntity<SprintComparisonDTO> compareProjectSprints(@PathVariable Integer projectID) {
-        return ResponseEntity.ok(sprintComparisonService.compareSprints(projectID));
+    public ResponseEntity<SprintComparisonDTO> compareProjectSprints(
+            @PathVariable Integer projectID,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return ResponseEntity.ok(sprintComparisonService.compareSprints(projectID, from, to));
     }
 }

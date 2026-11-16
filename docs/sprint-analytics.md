@@ -1,6 +1,6 @@
 # Raporty sprintów - założenia
 
-Zasady, według których liczymy raporty sprintów (WF-1 do WF-7). Same endpointy raportowe dojdą w kolejnych zadaniach.
+Zasady, według których liczymy raporty sprintów (WF-1 do WF-7).
 
 ## Estymacje i statusy
 
@@ -35,7 +35,7 @@ Punkty wykresu to kolejne wpisy z `sprint_progress` posortowane po czasie, a prz
 
 ## Brak historii
 
-Nie uzupełniamy brakujących danych. Jeśli sprint nie ma wpisu z chwili startu, początkowa liczba zadań jest nieznana, a wykres pokazuje tylko te wpisy, które są. Sprintów usuniętych z bazy przed tą zmianą nie da się już odtworzyć.
+Nie uzupełniamy brakujących danych. Jeśli sprint nie ma wpisu z chwili startu, początkowa liczba zadań jest nieznana (`initialIssueCount = null`), a wykres pokazuje tylko te wpisy, które są. Sprintów usuniętych z bazy przed tą zmianą nie da się już odtworzyć.
 
 ## Daty i filtrowanie
 

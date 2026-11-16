@@ -33,6 +33,8 @@ Wartości są w story points, a czas punktu to moment zapisu wpisu.
 
 Punkty wykresu to kolejne wpisy z `sprint_progress` posortowane po czasie, a przy tym samym czasie po ID. Nie dorabiamy punktów dla dni, w których nic się nie zmieniło. Sprint bez estymacji ma na wykresie same zera.
 
+Burndown jest dostępny także podczas trwania sprintu; jeśli nie ma żadnych wpisów historii, zwraca pustą listę.
+
 ## Brak historii
 
 Nie uzupełniamy brakujących danych. Jeśli sprint nie ma wpisu z chwili startu, początkowa liczba zadań jest nieznana (`initialIssueCount = null`), a wykres pokazuje tylko te wpisy, które są. Sprintów usuniętych z bazy przed tą zmianą nie da się już odtworzyć.
@@ -43,7 +45,7 @@ Nie uzupełniamy brakujących danych. Jeśli sprint nie ma wpisu z chwili startu
 - Filtr działa po dacie zakończenia sprintu (w UTC). `from` i `to` są opcjonalne, obie granice są włączne. Jeśli `from` jest późniejsze niż `to`, API zwraca 400.
 - Porównanie sprintów i CSV obejmują tylko zakończone sprinty danego projektu, od najstarszego (po dacie zakończenia, potem po ID).
 - Nieistniejący projekt: 404. Brak wyników: pusta lista, a w CSV sam nagłówek.
-- Raport dla trwającego sprintu albo sprintu bez zapisanego wyniku: 409.
+- Podsumowanie dla trwającego sprintu albo sprintu bez zapisanego wyniku: 409.
 
 ## Zmiany w bazie
 

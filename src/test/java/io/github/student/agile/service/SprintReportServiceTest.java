@@ -4,6 +4,7 @@ import io.github.student.agile.exception.definition.StateConflictException;
 import io.github.student.agile.resource.domain.Project;
 import io.github.student.agile.resource.domain.Sprint;
 import io.github.student.agile.resource.domain.SprintProgress;
+import io.github.student.agile.resource.dto.BurndownPointDTO;
 import io.github.student.agile.resource.dto.SprintReportDTO;
 import io.github.student.agile.resource.repository.SprintProgressRepository;
 import io.github.student.agile.resource.repository.SprintRepository;
@@ -92,6 +93,29 @@ class SprintReportServiceTest {
 
         assertThatThrownBy(() -> service.getReport(1)).isInstanceOf(StateConflictException.class)
                 .hasMessage("Sprint has no recorded final result");
+    }
+
+    @Test
+    void burndownUsesOnlyRecordedTimestampsAndDoesNotInventMissingStart() {
+        ZonedDateTime observed = sprint.getStartDate().plusDays(2);
+        when(progress.findAllBySprintIdOrderByCapturedAtAscIdAsc(1)).thenReturn(List.of(
+                SprintProgress.builder().kind(SprintProgress.Kind.CHANGE).capturedAt(observed)
+                        .totalPoints(8).completedPoints(3).build(),
+                SprintProgress.builder().kind(SprintProgress.Kind.END).capturedAt(sprint.getEndDate())
+                        .totalPoints(8).completedPoints(8).build()));
+
+        assertThat(service.getBurndown(1)).containsExactly(
+                new BurndownPointDTO(observed.toInstant(), 5),
+                new BurndownPointDTO(sprint.getEndDate().toInstant(), 0));
+    }
+
+    @Test
+    void burndownNeverReturnsNegativeRemainingWork() {
+        when(progress.findAllBySprintIdOrderByCapturedAtAscIdAsc(1)).thenReturn(List.of(
+                SprintProgress.builder().kind(SprintProgress.Kind.END).capturedAt(sprint.getEndDate())
+                        .totalPoints(2).completedPoints(3).build()));
+
+        assertThat(service.getBurndown(1)).extracting(BurndownPointDTO::remainingPoints).containsExactly(0L);
     }
 
     private SprintProgress point(SprintProgress.Kind kind, int count, int done, long total, long completed) {

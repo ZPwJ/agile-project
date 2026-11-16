@@ -4,6 +4,7 @@ import io.github.student.agile.exception.definition.ResourceNotFoundException;
 import io.github.student.agile.exception.definition.StateConflictException;
 import io.github.student.agile.resource.domain.Sprint;
 import io.github.student.agile.resource.domain.SprintProgress;
+import io.github.student.agile.resource.dto.BurndownPointDTO;
 import io.github.student.agile.resource.dto.SprintReportDTO;
 import io.github.student.agile.resource.repository.SprintProgressRepository;
 import io.github.student.agile.resource.repository.SprintRepository;
@@ -27,8 +28,7 @@ public class SprintReportService {
     private final SprintProgressRepository progressRepository;
 
     public SprintReportDTO getReport(Integer sprintID) {
-        Sprint sprint = sprintRepository.findById(requirePositiveId(sprintID))
-                .orElseThrow(() -> new ResourceNotFoundException(SPRINT_DOES_NOT_EXISTS));
+        Sprint sprint = requireSprint(sprintID);
         if (!Boolean.TRUE.equals(sprint.getIsDone())) {
             throw new StateConflictException("Sprint report requires a closed sprint");
         }
@@ -46,6 +46,19 @@ public class SprintReportService {
                 instant(sprint.getStartDate()), instant(sprint.getEndDate()), initialCount,
                 result.getCompletedIssueCount(), result.getIssueCount() - result.getCompletedIssueCount(),
                 result.getCompletedPoints(), result.getTotalPoints() - result.getCompletedPoints());
+    }
+
+    public List<BurndownPointDTO> getBurndown(Integer sprintID) {
+        requireSprint(sprintID);
+        return progressRepository.findAllBySprintIdOrderByCapturedAtAscIdAsc(sprintID).stream()
+                .map(point -> new BurndownPointDTO(point.getCapturedAt().toInstant(),
+                        Math.max(0, point.getTotalPoints() - point.getCompletedPoints())))
+                .toList();
+    }
+
+    private Sprint requireSprint(Integer sprintID) {
+        return sprintRepository.findById(requirePositiveId(sprintID))
+                .orElseThrow(() -> new ResourceNotFoundException(SPRINT_DOES_NOT_EXISTS));
     }
 
     private Instant instant(ZonedDateTime date) {

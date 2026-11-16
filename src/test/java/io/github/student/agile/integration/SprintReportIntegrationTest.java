@@ -3,6 +3,8 @@ package io.github.student.agile.integration;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import io.github.student.agile.config.TestConfiguration;
 import io.github.student.agile.resource.controller.ApiExceptionHandler;
+import io.github.student.agile.resource.controller.IssueRestController;
+import io.github.student.agile.resource.controller.SprintRestController;
 import io.github.student.agile.resource.controller.SprintReportRestController;
 import io.github.student.agile.resource.domain.Issue;
 import io.github.student.agile.resource.domain.Project;
@@ -35,7 +37,10 @@ import java.util.HashSet;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -58,12 +63,59 @@ class SprintReportIntegrationTest {
     @BeforeEach
     void setUp() {
         project = projects.save(Project.builder().name("Reports").build());
-        mvc = MockMvcBuilders.standaloneSetup(new SprintReportRestController(reports))
+        mvc = MockMvcBuilders.standaloneSetup(new SprintReportRestController(reports),
+                        new SprintRestController(sprintService), new IssueRestController(issueService))
                 .setControllerAdvice(new ApiExceptionHandler())
                 .setMessageConverters(new MappingJackson2HttpMessageConverter(
                         Jackson2ObjectMapperBuilder.json()
                                 .featuresToDisable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS).build()))
                 .build();
+    }
+
+    @Test
+    void sprintApiLifecycleKeepsFinalReportAfterDetachingIssues() throws Exception {
+        Sprint sprint = sprint(project, "API lifecycle");
+        Issue done = issue(sprint, 1, 3);
+        Issue unfinished = issue(sprint, 2, null);
+        mvc.perform(get("/api/sprint/non-activated/{projectID}", project.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].id").value(sprint.getId()));
+        mvc.perform(get("/api/sprint/active/{projectID}", project.getId()))
+                .andExpect(status().isOk()).andExpect(content().string(""));
+
+        mvc.perform(patch("/api/sprint/start/{id}", sprint.getId())).andExpect(status().isOk());
+        mvc.perform(get("/api/sprint/active/{projectID}", project.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(sprint.getId()))
+                .andExpect(jsonPath("$.active").value(true));
+        mvc.perform(get("/api/issue/sprint/{id}", sprint.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].id", containsInAnyOrder(done.getId(), unfinished.getId())));
+        for (int status = 2; status <= 5; status++) {
+            mvc.perform(patch("/api/issue/{id}/status/{status}", done.getId(), status))
+                    .andExpect(status().isOk());
+        }
+        mvc.perform(patch("/api/sprint/project/{projectID}/stop", project.getId()))
+                .andExpect(status().isOk());
+
+        mvc.perform(get("/api/sprint/active/{projectID}", project.getId()))
+                .andExpect(status().isOk()).andExpect(content().string(""));
+        mvc.perform(get("/api/sprint/non-activated/{projectID}", project.getId()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
+        mvc.perform(get("/api/issue/sprint/{id}", sprint.getId()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
+        mvc.perform(get("/api/issue/details/{id}", unfinished.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.issueStatusID").value(1))
+                .andExpect(jsonPath("$.sprintID").isEmpty());
+        mvc.perform(get("/api/reports/sprints/{id}", sprint.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.initialIssueCount").value(2))
+                .andExpect(jsonPath("$.completedIssueCount").value(1))
+                .andExpect(jsonPath("$.incompleteIssueCount").value(1))
+                .andExpect(jsonPath("$.velocity").value(3))
+                .andExpect(jsonPath("$.incompletePoints").value(0));
     }
 
     @Test

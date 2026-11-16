@@ -229,6 +229,26 @@ mvn verify
 
 Tests run on an in-memory H2 database, so Docker and `.env` are not needed. The JaCoCo report is generated in `target/site/jacoco/index.html`.
 
+## API demo
+
+With the application running, execute from the repository root using Java 21 and Maven:
+
+```bash
+mvn -Dtest=SprintAnalyticsDemo test
+```
+
+Alternatively, use Docker without installing Java or Maven locally:
+
+```bash
+docker run --rm \
+  --network "container:$(docker compose ps -q auth-server)" \
+  -v "$PWD:/app" -v agile-maven-cache:/root/.m2 -w /app \
+  maven:3.9.9-eclipse-temurin-21 \
+  mvn -Dtest=SprintAnalyticsDemo -Ddemo.api=http://agile-server:8081 test
+```
+
+The Java scenario logs in with the imported demo account, creates two projects and three closed sprints, and checks reports, charts, date filters, CSV and unchanged results after sprint closure. It prints IDs and URLs for further requests using a Bearer token (see [Getting a token](#getting-a-token)). Each run adds its own demo data. It runs only with the command above, not during application startup or regular tests, and does not save tokens.
+
 ## Dictionaries
 
 When running on PostgreSQL, Spring executes `src/main/resources/data-postgres.sql` on startup. It inserts the issue statuses, types and priorities. Rows that already exist are skipped (`ON CONFLICT DO NOTHING`), so restarting the app doesn't duplicate or overwrite anything.

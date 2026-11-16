@@ -44,8 +44,10 @@ Nie uzupełniamy brakujących danych. Jeśli sprint nie ma wpisu z chwili startu
 - Czas w odpowiedziach jest w formacie ISO 8601 w UTC, np. `2026-11-11T21:15:54Z`. Daty w filtrach: `YYYY-MM-DD`.
 - Filtr działa po dacie zakończenia sprintu (w UTC). `from` i `to` są opcjonalne, obie granice są włączne. Jeśli `from` jest późniejsze niż `to`, API zwraca 400.
 - Porównanie sprintów i CSV obejmują tylko zakończone sprinty danego projektu, od najstarszego (po dacie zakończenia, potem po ID).
+- Sprinty bez daty zakończenia są na końcu listy bez filtrów; przy filtrowaniu dat są pomijane.
 - Nieistniejący projekt: 404. Brak wyników: pusta lista, a w CSV sam nagłówek.
 - Podsumowanie dla trwającego sprintu albo sprintu bez zapisanego wyniku: 409.
+- Zestawienie obejmujące sprint bez zapisanego wyniku: 409.
 
 ## Zmiany w bazie
 

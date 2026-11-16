@@ -7,6 +7,8 @@ import io.github.student.agile.resource.domain.SprintProgress;
 import io.github.student.agile.resource.dto.BurndownPointDTO;
 import io.github.student.agile.resource.dto.BurnupPointDTO;
 import io.github.student.agile.resource.dto.SprintReportDTO;
+import io.github.student.agile.resource.dto.request.ReportDateRange;
+import io.github.student.agile.resource.repository.ProjectRepository;
 import io.github.student.agile.resource.repository.SprintProgressRepository;
 import io.github.student.agile.resource.repository.SprintRepository;
 import lombok.RequiredArgsConstructor;
@@ -14,9 +16,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
+import static io.github.student.agile.exception.dictionary.ExceptionMessages.PROJECT_DOES_NOT_EXISTS;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.SPRINT_DOES_NOT_EXISTS;
 import static io.github.student.agile.resource.service.RequestValidation.requirePositiveId;
 
@@ -27,6 +35,7 @@ public class SprintReportService {
 
     private final SprintRepository sprintRepository;
     private final SprintProgressRepository progressRepository;
+    private final ProjectRepository projectRepository;
 
     public SprintReportDTO getReport(Integer sprintID) {
         Sprint sprint = requireSprint(sprintID);
@@ -34,7 +43,46 @@ public class SprintReportService {
             throw new StateConflictException("Sprint report requires a closed sprint");
         }
 
-        List<SprintProgress> history = progressRepository.findAllBySprintIdOrderByCapturedAtAscIdAsc(sprintID);
+        return createReport(sprint, progressRepository.findAllBySprintIdOrderByCapturedAtAscIdAsc(sprintID));
+    }
+
+    public List<SprintReportDTO> getComparison(Integer projectID, LocalDate from, LocalDate to) {
+        requirePositiveId(projectID);
+        ReportDateRange range = new ReportDateRange(from, to);
+        if (!projectRepository.existsById(projectID)) {
+            throw new ResourceNotFoundException(PROJECT_DOES_NOT_EXISTS);
+        }
+        List<Sprint> sprints = sprintRepository.findAllByProjectIdAndIsDoneTrue(projectID).stream()
+                .filter(sprint -> matchesDateRange(sprint.getEndDate(), range))
+                .sorted(Comparator.comparing(Sprint::getEndDate,
+                        Comparator.nullsLast(Comparator.comparing(ZonedDateTime::toInstant)))
+                        .thenComparing(Sprint::getId))
+                .toList();
+        if (sprints.isEmpty()) {
+            return List.of();
+        }
+        Map<Integer, List<SprintProgress>> history = progressRepository
+                .findAllBySprintIdInAndKindInOrderByCapturedAtAscIdAsc(
+                        sprints.stream().map(Sprint::getId).toList(),
+                        List.of(SprintProgress.Kind.START, SprintProgress.Kind.END))
+                .stream().collect(Collectors.groupingBy(point -> point.getSprint().getId()));
+        return sprints.stream().map(sprint -> createReport(sprint,
+                history.getOrDefault(sprint.getId(), List.of()))).toList();
+    }
+
+    private boolean matchesDateRange(ZonedDateTime endDate, ReportDateRange range) {
+        if (range.from() == null && range.to() == null) {
+            return true;
+        }
+        if (endDate == null) {
+            return false;
+        }
+        LocalDate date = endDate.withZoneSameInstant(ZoneOffset.UTC).toLocalDate();
+        return (range.from() == null || !date.isBefore(range.from()))
+                && (range.to() == null || !date.isAfter(range.to()));
+    }
+
+    private SprintReportDTO createReport(Sprint sprint, List<SprintProgress> history) {
         SprintProgress result = history.stream()
                 .filter(point -> point.getKind() == SprintProgress.Kind.END)
                 .reduce((earlier, later) -> later)

@@ -19,7 +19,7 @@ Zasady, według których liczymy raporty sprintów (WF-1 do WF-7).
 
 Wcześniej aplikacja nie zapisywała żadnej historii, a zamknięty sprint był usuwany z bazy. Teraz:
 
-- zamknięty sprint zostaje w bazie razem z datą zakończenia, a nieukończone zadania wracają do backlogu jako `TO_DO`,
+- zamknięty sprint zostaje w bazie razem z datą zakończenia; zadania są od niego odpinane, a nieukończone wracają do backlogu jako `TO_DO`,
 - w tabeli `sprint_progress` zapisujemy stan sprintu: liczbę zadań, liczbę ukończonych, sumę punktów i sumę ukończonych punktów. Wpis powstaje przy starcie, przy każdej zmianie w trwającym sprincie (dodanie lub usunięcie zadania, zmiana estymacji albo statusu) i przy zamknięciu.
 
 Dodanie zadania zwiększa zakres, usunięcie go zmniejsza. Zmiana estymacji zmienia punkty od momentu zapisu, również dla zadań już ukończonych. Starych wpisów nie poprawiamy.

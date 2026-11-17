@@ -208,7 +208,9 @@ public class SprintServiceTest {
 
         //given
         Integer sprintID = sprintRepository.save(createSprintEntity(defaultScrumProject, Boolean.FALSE)).getId();
-        Integer issueID = issueRepository.save(createIssueEntity()).getId();
+        Issue issue = createIssueEntity();
+        issue.setProjectID(defaultScrumProject.getId());
+        Integer issueID = issueRepository.save(issue).getId();
 
         //when
         sprintService.addIssueToSprint(issueID, sprintID);
@@ -223,7 +225,7 @@ public class SprintServiceTest {
     public void addIssueToSprint_throwsIssueDoesNotExistsExceptionTest() {
 
         //given
-        Integer fakeIssueID = -10;
+        Integer fakeIssueID = Integer.MAX_VALUE;
 
         //when
         Exception exception = assertThrows(RuntimeException.class, () -> sprintService.addIssueToSprint(fakeIssueID, null));
@@ -237,7 +239,7 @@ public class SprintServiceTest {
 
         //given
         Integer issueID = issueRepository.save(createIssueEntity()).getId();
-        Integer fakeSprintID = -10;
+        Integer fakeSprintID = Integer.MAX_VALUE;
 
         //when
         Exception exception = assertThrows(RuntimeException.class, () -> sprintService.addIssueToSprint(issueID, fakeSprintID));
@@ -295,7 +297,7 @@ public class SprintServiceTest {
     public void startSprint_throwsSprintDoesNotExistsExceptionTest() {
 
         //given
-        Integer fakeSprintID = -10;
+        Integer fakeSprintID = Integer.MAX_VALUE;
 
         //when
         Exception exception = assertThrows(RuntimeException.class, () -> sprintService.startSprint(fakeSprintID));
@@ -354,14 +356,17 @@ public class SprintServiceTest {
         assertEquals(DONE.getStatusID(), doneIssue.getIssueStatus().getId());
         assertNull(inProgressIssue.getSprint());
         assertNull(doneIssue.getSprint());
-        assertNull(sprintAfterStopOperation);
+        assertNotNull(sprintAfterStopOperation);
+        assertTrue(sprintAfterStopOperation.getIsDone());
+        assertFalse(sprintAfterStopOperation.getActive());
+        assertNotNull(sprintAfterStopOperation.getEndDate());
     }
 
     @Test
     public void stopSprint_throwsProjectDoesNotExistsExceptionTest() {
 
         //given
-        Integer fakeProjectID = -10;
+        Integer fakeProjectID = Integer.MAX_VALUE;
 
         //when
         Exception exception = assertThrows(RuntimeException.class, () -> sprintService.stopSprint(fakeProjectID));
@@ -421,7 +426,7 @@ public class SprintServiceTest {
     public void deleteSprint_throwsSprintDoesNotExistsExceptionTest() {
 
         //given
-        Integer fakeSprintID = -10;
+        Integer fakeSprintID = Integer.MAX_VALUE;
 
         //when
         Exception exception = assertThrows(RuntimeException.class, () -> sprintService.deleteSprint(fakeSprintID));

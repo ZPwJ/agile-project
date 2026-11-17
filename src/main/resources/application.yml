@@ -9,7 +9,7 @@ server:
 spring:
     datasource:
         driver-class-name: org.postgresql.Driver
-        password: student
+        password: ${SPRING_DATASOURCE_PASSWORD}
         url: jdbc:postgresql://localhost:5432/agiledb
         username: appuser
     jackson:

@@ -125,7 +125,7 @@ cp .env.example .env
 - `AUTH_DB_POSTGRES_PASSWORD` and `KC_DB_PASSWORD` have to be the same (Keycloak database),
 - `AUTH_SERVER_CLIENT_SECRET` is the `secret` of the `agile-project-server` client in `infrastructure/auth-server/realm-export.json`.
 
-The other passwords can be anything. Postgres sets the password only when its volume is created, so if you change it later you have to recreate the volume with `docker compose down -v` (this deletes the data).
+The other passwords can be anything. Postgres sets the password only when its volume is created. Changing `.env` later does not change the database password: also update the database role password, or recreate the volume with `docker compose down -v` (this deletes the data).
 
 ### 3. Start the application
 

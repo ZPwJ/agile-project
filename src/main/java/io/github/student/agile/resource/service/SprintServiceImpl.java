@@ -31,6 +31,7 @@ import static io.github.student.agile.exception.dictionary.ExceptionMessages.NO_
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.PROJECT_DOES_NOT_EXISTS;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.SPRINT_ALREADY_STARTED;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.SPRINT_DOES_NOT_EXISTS;
+import static io.github.student.agile.exception.dictionary.ExceptionMessages.SPRINT_END_DATE_BEFORE_START_DATE;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.SPRINT_NAME_NOT_UNIQUE;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.SPRINT_START_DATE_IN_THE_FUTURE;
 import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.DONE;
@@ -94,9 +95,12 @@ public class SprintServiceImpl implements SprintService {
             throw new RuntimeException(SPRINT_NAME_NOT_UNIQUE);
         }
 
+        validateEndDateNotBeforeStartDate(sprintDTO.getStartTime(), sprintDTO.getEndTime());
+
         Sprint sprint = Sprint.builder()
                 .name(sprintDTO.getName())
                 .startDate(sprintDTO.getStartTime())
+                .endDate(sprintDTO.getEndTime())
                 .sprintIssues(new HashSet<>())
                 .sprintGoal(sprintDTO.getSprintGoal())
                 .active(FALSE)
@@ -122,9 +126,12 @@ public class SprintServiceImpl implements SprintService {
             }
         }
 
+        validateEndDateNotBeforeStartDate(sprintDTO.getStartTime(), sprintDTO.getEndTime());
+
         updated.setName(sprintDTO.getName());
         updated.setSprintGoal(sprintDTO.getSprintGoal());
         updated.setStartDate(sprintDTO.getStartTime());
+        updated.setEndDate(sprintDTO.getEndTime());
 
         sprintRepository.save(updated);
         return sprintDTOMapper.map(updated);
@@ -248,8 +255,17 @@ public class SprintServiceImpl implements SprintService {
 
         updated.setActive(FALSE);
         updated.setIsDone(TRUE);
+        if (isNull(updated.getEndDate())) {
+            updated.setEndDate(ZonedDateTime.now());
+        }
         sprintRepository.save(updated);
         sprintRepository.deleteById(updated.getId());
+    }
+
+    private void validateEndDateNotBeforeStartDate(ZonedDateTime start, ZonedDateTime end) {
+        if (start != null && end != null && end.isBefore(start)) {
+            throw new RuntimeException(SPRINT_END_DATE_BEFORE_START_DATE);
+        }
     }
 
     private Pair<Boolean, String> validateSprintDatesForStart(Sprint sprint) {

@@ -39,6 +39,9 @@ public class Sprint extends Auditable implements Serializable {
 
     private ZonedDateTime startDate;
 
+    /** Set when the sprint is stopped (or supplied by the client); {@code null} while open. */
+    private ZonedDateTime endDate;
+
     @ManyToOne
     @JoinColumn(name = "ProjectID", nullable = false)
     private Project project;

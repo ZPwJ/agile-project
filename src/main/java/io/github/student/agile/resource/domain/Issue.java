@@ -10,8 +10,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
-import jakarta.persistence.SequenceGenerator;
-import lombok.AllArgsConstructor;
+import jakarta.persistence.SequenceGenerator;import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -39,6 +38,7 @@ public class Issue extends Auditable implements Serializable {
 
     private String description;
 
+    /** Story points. {@code null} means "not estimated"; negative values are rejected by IssueServiceImpl. */
     private Integer estimation;
 
     private String reporterID;

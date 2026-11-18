@@ -5,6 +5,9 @@ import io.github.student.agile.resource.domain.Backlog;
 import io.github.student.agile.resource.domain.Issue;
 import io.github.student.agile.resource.domain.IssuePriority;
 import io.github.student.agile.resource.domain.IssueStatus;
+import io.github.student.agile.resource.domain.IssueStatusHistory;
+import io.github.student.agile.resource.repository.IssueStatusHistoryRepository;
+import java.time.Instant;
 import io.github.student.agile.resource.domain.IssueType;
 import io.github.student.agile.resource.domain.Project;
 import io.github.student.agile.resource.domain.Sprint;
@@ -34,6 +37,7 @@ import static io.github.student.agile.exception.dictionary.ExceptionMessages.IMP
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.ISSUE_DOES_NOT_EXISTS;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.ISSUE_PRIORITY_DOES_NOT_EXISTS;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.ISSUE_TYPE_DOES_NOT_EXISTS;
+import static io.github.student.agile.exception.dictionary.ExceptionMessages.NEGATIVE_ESTIMATION;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.NULL_IDENTIFIER;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.PROJECT_DOES_NOT_EXISTS;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.PROJECT_ID_EMPTY;
@@ -60,12 +64,15 @@ public class IssueServiceImpl implements IssueService{
     private final IssueTypeRepository issueTypeRepository;
     private final SprintRepository sprintRepository;
     private final BacklogRepository backlogRepository;
+    private final IssueStatusHistoryRepository issueStatusHistoryRepository;
     private final UserService userService;
     private final IssueDTOMapper issueDTOMapper;
     private final IssueGeneralDTOMapper issueGeneralDTOMapper;
 
     @Override
     public IssueDTO createIssue(IssueMRO issueDTO) {
+
+        validateEstimation(issueDTO.getEstimation());
 
         Project project = projectRepository.findById(issueDTO.getProjectID())
                 .orElseThrow(() -> new RuntimeException(PROJECT_DOES_NOT_EXISTS));
@@ -109,6 +116,8 @@ public class IssueServiceImpl implements IssueService{
 
     @Override
     public IssueDTO updateIssue(IssueMRO issueDTO) {
+
+        validateEstimation(issueDTO.getEstimation());
 
         Issue updated = issueRepository.findById(
                 ofNullable(issueDTO.getIssueID()).orElseThrow(
@@ -267,6 +276,19 @@ public class IssueServiceImpl implements IssueService{
         }
         updated.setIssueStatus(newStatus);
         issueRepository.save(updated);
+        issueStatusHistoryRepository.save(IssueStatusHistory.builder()
+                .issueId(updated.getId())
+                .sprintId(issueSprint.get().getId())
+                .oldStatus(currentStatus)
+                .newStatus(newStatus)
+                .changedAt(Instant.now())
+                .build());
+    }
+
+    private void validateEstimation(Integer estimation) {
+        if (estimation != null && estimation < 0) {
+            throw new IllegalArgumentException(NEGATIVE_ESTIMATION);
+        }
     }
 
     private boolean isStatusChangeFlowCorrect(IssueStatus current, IssueStatus changeRequested) {

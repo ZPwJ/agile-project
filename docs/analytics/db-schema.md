@@ -45,8 +45,25 @@ docker compose down -v
 docker compose up -d app-db
 ```
 
-## Known limitation (needs a team decision)
+## Finished sprints (`stopSprint` behaviour change)
 
-`SprintServiceImpl.stopSprint` currently **deletes the sprint** and detaches its issues
-(`sprint = null`; unfinished issues are reset to `TO_DO`). Reports for finished sprints
-therefore have no sprint or membership data to read. See the PR discussion for the proposed fix.
+Before: `stopSprint` deleted the sprint, detached its issues (`sprint = null`) and reset unfinished
+issues to `TO_DO`, so nothing was left for reports. Now it **keeps the sprint** (`isDone = true`,
+`active = false`, `endDate` set if empty) and first writes one `sprint_issue_snapshot` row per issue.
+Issues are still detached and unfinished ones still reset to `TO_DO`, as before.
+`deleteSprint` rejects finished sprints so reports cannot lose their data.
+
+### `sprint_issue_snapshot`
+
+| Column | Type | Notes |
+|---|---|---|
+| `SnapshotID` | int, sequence | PK |
+| `SprintID` | FK `sprint`, not null | indexed |
+| `issue_id` | int, not null | plain id, survives issue deletion |
+| `estimation` | int, nullable | story points at stop time, `null` = not estimated |
+| `finalStatusId` | FK `issue_status` | status before the reset to `TO_DO` |
+| `completed` | boolean, not null | final status was `DONE` |
+
+**Limitation (state it in the PR):** the snapshot reflects scope and estimations at the moment the
+sprint was stopped. Issues removed from the sprint earlier, and estimation changes during the sprint,
+are not recorded. Sprints stopped before this change were deleted and cannot be recovered.

@@ -7,6 +7,7 @@ import io.github.student.agile.resource.dto.CommitmentRuleDTO;
 import io.github.student.agile.resource.mapper.CommitmentRuleDTOMapper;
 import io.github.student.agile.resource.repository.CommitmentRuleRepository;
 import io.github.student.agile.resource.repository.ProjectRepository;
+import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -17,6 +18,7 @@ import java.util.stream.Collectors;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.PROJECT_DOES_NOT_EXISTS;
 
 @Service
+@Transactional
 @RequiredArgsConstructor
 public class CommitmentRuleServiceImpl implements CommitmentRuleService {
 

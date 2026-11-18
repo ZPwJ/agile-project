@@ -11,7 +11,7 @@ porównanie sprintów z filtrowaniem po datach oraz eksport CSV. Prace rozpoczę
 | B - Jakub Sawicki (JakubSawicki03)     | obsługa błędów API, velocity, raport podsumowujący sprint (#10, #11, #12) | WF-1, WF-2, WNF |
 | C - Nikodem Wełna (shoxxie01)          | dane do wykresów burndown i burnup (#13, #14) | WF-3, WF-4 |
 | D - Mateusz Słupski (SlupskiMateusz02) | porównanie sprintów projektu, filtrowanie po dacie (#15, #16) | WF-5, WF-6 |
-| E                                      | generator i eksport CSV, pomiar pokrycia JaCoCo, testy kontrolerów, instrukcja uruchomienia (#17, #18, #19, #20, #21) | WF-7, WNF |
+| E - Antoni Widelski                    | generator i eksport CSV, pomiar pokrycia JaCoCo, testy kontrolerów, instrukcja uruchomienia (#17, #18, #19, #20, #21) | WF-7, WNF |
 
 Wspólnie: reguły obliczeń i kontrakt API (#4), dane demonstracyjne (#9), Pull Request i oddanie projektu (#22).
 
@@ -27,6 +27,9 @@ Wspólnie: reguły obliczeń i kontrakt API (#4), dane demonstracyjne (#9), Pull
 | `IssueServiceImpl` | tworzenie i edycja zadania odrzucają ujemną estymację (`NEGATIVE_ESTIMATION`, HTTP 400) | ujemne story points dawałyby ujemne velocity i wartości wykresów (WF-3) |
 | `SprintRepository` | metoda `findAllByProjectIdAndIsDoneTrue` | zakończone sprinty projektu jednym zapytaniem (WF-5) |
 | `ExceptionMessages` | komunikat `INVALID_DATE_RANGE` | czytelny błąd 400 dla `from` późniejszego niż `to` (WF-6) |
+| `ApiExceptionHandler` | odpowiedź błędu ma zawsze typ `application/json` | przy `Accept: text/csv` eksport zwracał 500 zamiast 404/400 |
+| `CommitmentRuleServiceImpl` | `@Transactional`, tak jak w innych serwisach | usuwanie wszystkich reguł DoD kończyło się 500 (`LazyInitializationException`) |
+| `application.yml` | hasło bazy brane z `SPRING_DATASOURCE_PASSWORD`, `data-prod.sql` wczytywany przy starcie | hasło nie powinno być w repo, a bez słowników nie dało się dodać zadania |
 | serwisy `*ServiceImpl` | `new RuntimeException(...)` zastąpione typowanymi wyjątkami z `exception.definition`; komunikaty bez zmian | wcześniej każdy błąd biznesowy kończył się HTTP 500; typowane wyjątki dziedziczą po `RuntimeException`, więc istniejące testy działają bez zmian |
 
 ## Nowe elementy
@@ -47,7 +50,7 @@ Wspólnie: reguły obliczeń i kontrakt API (#4), dane demonstracyjne (#9), Pull
 | GET | `/api/analytics/sprints/{id}/burndown` | WF-3 | gotowe |
 | GET | `/api/analytics/sprints/{id}/burnup` | WF-4 | gotowe |
 | GET | `/api/analytics/projects/{id}/sprints?from=&to=` | WF-5, WF-6 | gotowe |
-| GET | `/api/analytics/projects/{id}/sprints/export.csv?from=&to=` | WF-7 | w realizacji |
+| GET | `/api/analytics/projects/{id}/sprints/export.csv?from=&to=` | WF-7 | gotowe |
 
 Zestawienie obejmuje zakończone sprinty projektu, których okres trwania nachodzi na przedział `from`–`to`
 (szczegóły w sekcji „Porównanie sprintów i filtrowanie”).
@@ -155,26 +158,27 @@ w `AnalyticsRestController` zwraca 200, 404 dla nieistniejącego sprintu i 400 d
 Wymagany Docker. W katalogu repozytorium:
 
 ```bash
+cp .env.example .env
 docker compose -f compose.yaml up --build
 ```
 
 Aplikacja działa pod `http://localhost:8081`, dokumentacja API pod `http://localhost:8081/docs.html`.
 
-Testy (Java 21, Maven, baza H2 w pamięci, bez Dockera):
+Testy (Java 21, baza H2 w pamięci, bez Dockera):
 
 ```bash
-mvn test
+./mvnw test
 ```
 
 ## Pokrycie testami
 
 ```bash
-mvn verify
+./mvnw verify
 ```
 
 Raport JaCoCo powstaje w `target/site/jacoco/index.html`.
-Aktualny wynik (16 listopada 2026 r., po WF-1–WF-6 i obsłudze błędów): 221 testów, wszystkie przechodzą,
-pokrycie instrukcji 75,98% (3347 z 4405). Wymagane minimum to 75%.
+Aktualny wynik (18 listopada 2026 r., po WF-1–WF-7 i testach kontrolerów): 294 testy, wszystkie przechodzą,
+pokrycie instrukcji 89,34% (4090 z 4578). Wymagane minimum to 75%, przy niższym pokryciu `verify` kończy się błędem.
 Raport obejmuje cały kod produkcyjny, bez wykluczeń. Nowy kod raportu sprintu, velocity i obsługi błędów ma pokrycie 98,9%,
 kod wykresów burndown i burnup — 100%, kod porównania i filtrowania sprintów — 100% instrukcji i gałęzi.
 
@@ -303,13 +307,49 @@ pobierane są tylko dla sprintów, które przeszły filtr. Gdy żaden sprint nie
 Ograniczenie: dla sprintu bez historii kalkulator czyta jego bieżące zadania, co oznacza jedno dodatkowe zapytanie
 na taki sprint; dotyczy to wyłącznie sprintów sprzed wdrożenia modułu.
 
-Eksport CSV (WF-7) powinien korzystać z `SprintComparisonService.compareSprints(projectID, from, to)`, dzięki czemu
+Eksport CSV (WF-7) korzysta z `SprintComparisonService.compareSprints(projectID, from, to)`, dzięki czemu
 respektuje te same filtry, kolejność i błędy co zestawienie JSON.
 
 Testy: `SprintDateRangeTest` (jednostkowe: granice przedziału, jedna granica, strefa czasowa, sprinty bez dat),
 `SprintComparisonServiceImplTest` (jednostkowe z Mockito: jedno zapytanie o zdarzenia, brak mieszania zdarzeń między sprintami,
 brak zapytań przy złym przedziale), `SprintComparisonServiceTest` (pełny cykl sprintu, zgodność z raportem sprintu, kolejność,
 izolacja projektów, filtry) i nowe przypadki w `AnalyticsRestControllerIntegrationTest`.
+
+## Eksport CSV, testy i konfiguracja — stan realizacji (osoba E)
+
+Zrobione: WF-7 (#17, #18), pomiar pokrycia (#19), testy kontrolerów (#20), instrukcja uruchomienia (#21).
+Endpoint `GET /api/analytics/projects/{projectID}/sprints/export.csv?from=&to=` w `AnalyticsRestController` zwraca 200
+z plikiem CSV, 404 dla nieistniejącego projektu oraz 400 dla niepoprawnej daty i `from` późniejszego niż `to`.
+
+```text
+sprintID,sprintName,startedAt,endedAt,historyAvailable,completedIssueCount,uncompletedIssueCount,velocity
+4,Sprint 2,2026-10-01T07:00:00Z,2026-10-14T15:00:00Z,true,5,1,18
+```
+
+### Eksport CSV (WF-7)
+
+- Zestawienie pochodzi z `SprintComparisonService.compareSprints`, więc filtry, kolejność i liczby są takie same
+  jak w `/projects/{projectID}/sprints`.
+- Odpowiedź ma typ `text/csv;charset=UTF-8` i nazwę pliku `project-{id}-sprints.csv`.
+- Separator `,`, końce linii `CRLF`. Nagłówek jest zawsze, puste zestawienie to plik z samym nagłówkiem.
+- Daty w ISO-8601 (UTC). Sprint bez historii ma puste `startedAt` i `endedAt`.
+- Wartość z przecinkiem, cudzysłowem lub znakiem nowej linii jest ujmowana w cudzysłów, a cudzysłowy są podwajane
+  (`Sprint "Q4", part 1` → `"Sprint ""Q4"", part 1"`).
+- Błędy są zwracane jako JSON, tak jak w pozostałych endpointach.
+
+| Klasa | Pakiet | Rola |
+|---|---|---|
+| `SprintComparisonCsvWriter` | `resource.service.analytics` | zamiana zestawienia sprintów na tekst CSV |
+
+Testy: `SprintComparisonCsvWriterTest` (jednostkowe: nagłówek, kolejność, puste daty, escapowanie) i nowe przypadki
+w `AnalyticsRestControllerIntegrationTest`.
+
+### Testy kontrolerów (#20)
+
+Testy MockMvc: `SprintRestControllerIntegrationTest`, `IssueRestControllerIntegrationTest`,
+`CommentRestControllerIntegrationTest`, `CommitmentRuleRestControllerIntegrationTest`,
+`IssueDictionaryRestControllerIntegrationTest` i nowe przypadki w `ProjectRestControllerIntegrationTest`.
+Każdy kontroler ma 100% pokrycia instrukcji.
 
 ## Zrealizowane GitHub Issues
 
@@ -326,3 +366,8 @@ izolacja projektów, filtry) i nowe przypadki w `AnalyticsRestControllerIntegrat
 | #14 | Dane do wykresu burnup | C |
 | #15 | Porównanie sprintów projektu | D |
 | #16 | Filtrowanie zestawienia sprintów po dacie | D |
+| #17 | Generator CSV | E |
+| #18 | Eksport zestawienia do CSV | E |
+| #19 | Pomiar pokrycia JaCoCo | E |
+| #20 | Testy kontrolerów | E |
+| #21 | Instrukcja uruchomienia i konfiguracja | E |

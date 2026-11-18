@@ -9,7 +9,7 @@ server:
 spring:
     datasource:
         driver-class-name: org.postgresql.Driver
-        password: student
+        password: ${SPRING_DATASOURCE_PASSWORD}
         url: jdbc:postgresql://localhost:5432/agiledb
         username: appuser
     jackson:
@@ -33,6 +33,7 @@ spring:
                     jwk-set-uri: ${SECURITY_JWT_JWK_SET_URI:http://localhost:8080/realms/agile-project/protocol/openid-connect/certs}
     sql:
         init:
+            data-locations: classpath:data-prod.sql
             mode: always
             platform: postgres
 springdoc:

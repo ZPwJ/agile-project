@@ -23,11 +23,14 @@ public enum IssueStatusID {
 
     private final Integer statusID;
 
-    public static boolean isCompleted(IssueStatus status) {
-        return status != null
-                && status.getId() != null
+    public static boolean isCompleted(Integer statusId) {
+        return statusId != null
                 && COMPLETED_STATUSES.stream()
-                .anyMatch(completed -> completed.getStatusID().equals(status.getId()));
+                .anyMatch(completed -> completed.getStatusID().equals(statusId));
+    }
+
+    public static boolean isCompleted(IssueStatus status) {
+        return status != null && isCompleted(status.getId());
     }
 
     public static boolean isCompleted(Issue issue) {

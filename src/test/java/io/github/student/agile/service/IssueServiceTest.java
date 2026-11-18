@@ -13,6 +13,7 @@ import io.github.student.agile.resource.domain.Sprint;
 import io.github.student.agile.resource.domain.SprintIssueEvent;
 import io.github.student.agile.resource.domain.dictionary.IssuePriorityID;
 import io.github.student.agile.resource.domain.dictionary.IssueStatusID;
+import io.github.student.agile.resource.domain.dictionary.IssueTypeID;
 import io.github.student.agile.resource.domain.dictionary.SprintEventType;
 import io.github.student.agile.resource.dto.CommentDTO;
 import io.github.student.agile.resource.dto.IssueDTO;
@@ -22,6 +23,7 @@ import io.github.student.agile.resource.repository.BacklogRepository;
 import io.github.student.agile.resource.repository.CommentRepository;
 import io.github.student.agile.resource.repository.IssueRepository;
 import io.github.student.agile.resource.repository.IssueStatusRepository;
+import io.github.student.agile.resource.repository.IssueTypeRepository;
 import io.github.student.agile.resource.repository.ProjectRepository;
 import io.github.student.agile.resource.repository.SprintIssueEventRepository;
 import io.github.student.agile.resource.repository.SprintRepository;
@@ -79,6 +81,9 @@ public class IssueServiceTest {
 
     @Autowired
     private IssueStatusRepository issueStatusRepository;
+
+    @Autowired
+    private IssueTypeRepository issueTypeRepository;
 
     @Autowired
     private BacklogRepository backlogRepository;
@@ -194,6 +199,60 @@ public class IssueServiceTest {
 
         //when
         Exception exception = assertThrows(RuntimeException.class, () -> issueService.getProductBacklog(fakeProjectID));
+
+        //then
+        assertEquals(PROJECT_DOES_NOT_EXISTS, exception.getMessage());
+    }
+
+    @Test
+    public void getBacklogHistory_returnsOnlyDoneIssuesAndHandlesNullTypeOrStatus() {
+
+        //given
+        IssueStatus doneStatus = issueStatusRepository.findById(IssueStatusID.DONE.getStatusID()).orElseThrow();
+        IssueStatus inProgressStatus = issueStatusRepository.findById(IssueStatusID.IN_PROGRESS.getStatusID()).orElseThrow();
+
+        Issue doneWithType = createIssueEntityWithIssueStatus(doneStatus);
+        doneWithType.setName("Done with type");
+        doneWithType.setIssueType(issueTypeRepository.findById(IssueTypeID.USER_STORY.getTypeID()).orElseThrow());
+        issueRepository.save(doneWithType);
+
+        Issue doneWithoutType = createIssueEntityWithIssueStatus(doneStatus);
+        doneWithoutType.setName("Done without type");
+        doneWithoutType.setIssueType(null);
+        issueRepository.save(doneWithoutType);
+
+        Issue inProgressIssue = createIssueEntityWithIssueStatus(inProgressStatus);
+        inProgressIssue.setName("In progress issue");
+        inProgressIssue.setIssueType(issueTypeRepository.findById(IssueTypeID.BUG.getTypeID()).orElseThrow());
+        issueRepository.save(inProgressIssue);
+
+        Issue nullStatusAndTypeIssue = createIssueEntity();
+        nullStatusAndTypeIssue.setName("Null status and type");
+        nullStatusAndTypeIssue.setIssueStatus(null);
+        nullStatusAndTypeIssue.setIssueType(null);
+        issueRepository.save(nullStatusAndTypeIssue);
+
+        Backlog backlog = defaultScrumProject.getBacklog();
+        backlog.getIssues().addAll(List.of(doneWithType, doneWithoutType, inProgressIssue, nullStatusAndTypeIssue));
+        backlogRepository.save(backlog);
+
+        //when
+        List<IssueGeneralDTO> history = issueService.getBacklogHistory(defaultScrumProject.getId());
+
+        //then
+        assertEquals(2, history.size());
+        List<Integer> returnedIds = history.stream().map(IssueGeneralDTO::getId).toList();
+        Assertions.assertTrue(returnedIds.containsAll(List.of(doneWithType.getId(), doneWithoutType.getId())));
+    }
+
+    @Test
+    public void getBacklogHistory_throwsProjectDoesNotExistsExceptionTest() {
+
+        //given
+        Integer fakeProjectID = defaultScrumProject.getId() + 1;
+
+        //when
+        Exception exception = assertThrows(RuntimeException.class, () -> issueService.getBacklogHistory(fakeProjectID));
 
         //then
         assertEquals(PROJECT_DOES_NOT_EXISTS, exception.getMessage());

@@ -8,6 +8,7 @@ import io.github.student.agile.resource.domain.IssueStatus;
 import io.github.student.agile.resource.domain.IssueType;
 import io.github.student.agile.resource.domain.Project;
 import io.github.student.agile.resource.domain.Sprint;
+import io.github.student.agile.resource.domain.dictionary.IssueStatusID;
 import io.github.student.agile.resource.dto.IssueDTO;
 import io.github.student.agile.resource.dto.IssueGeneralDTO;
 import io.github.student.agile.resource.dto.request.IssueMRO;
@@ -41,7 +42,6 @@ import static io.github.student.agile.exception.dictionary.ExceptionMessages.SPR
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.STATUS_DOES_NOT_EXISTS;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.STATUS_FLOW_ORDER_VIOLATION;
 import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.CODE_REVIEW;
-import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.DONE;
 import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.IN_PROGRESS;
 import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.IN_TESTS;
 import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.TO_DO;
@@ -202,7 +202,7 @@ public class IssueServiceImpl implements IssueService{
         return project.getBacklog()
                 .getIssues()
                 .stream()
-                .filter(issue -> DONE.getStatusID().equals(issue.getIssueType().getId()))
+                .filter(IssueStatusID::isCompleted)
                 .map(issueGeneralDTOMapper::map)
                 .collect(Collectors.toList());
     }

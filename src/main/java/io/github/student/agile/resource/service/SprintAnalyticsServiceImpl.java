@@ -7,6 +7,8 @@ import io.github.student.agile.resource.domain.Sprint;
 import io.github.student.agile.resource.domain.SprintIssueEvent;
 import io.github.student.agile.resource.domain.dictionary.IssueStatusID;
 import io.github.student.agile.resource.domain.dictionary.SprintEventType;
+import io.github.student.agile.resource.dto.BurnupChartDTO;
+import io.github.student.agile.resource.dto.BurnupPointDTO;
 import io.github.student.agile.resource.dto.SprintSummaryReportDTO;
 import io.github.student.agile.resource.repository.IssueRepository;
 import io.github.student.agile.resource.repository.SprintIssueEventRepository;
@@ -15,6 +17,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -36,15 +43,8 @@ public class SprintAnalyticsServiceImpl implements SprintAnalyticsService {
 
     @Override
     public SprintSummaryReportDTO getSprintSummaryReport(Integer sprintId) {
-        if (sprintId == null) {
-            throw new NullIdentifierException();
-        }
-
-        Sprint sprint = sprintRepository.findById(sprintId)
-                .orElseThrow(() -> new ResourceNotFoundException(SPRINT_DOES_NOT_EXISTS));
-
+        Sprint sprint = findSprintAndVerifyAccess(sprintId);
         Integer projectId = sprint.getProject().getId();
-        userService.verifyProjectAccess(projectId);
 
         List<Issue> currentIssues = issueRepository.findAllBySprintId(sprintId);
         List<SprintIssueEvent> events = sprintIssueEventRepository.findAllBySprintIdOrderByOccurredAtAscIdAsc(sprintId);
@@ -89,6 +89,172 @@ public class SprintAnalyticsServiceImpl implements SprintAnalyticsService {
                 .build();
     }
 
+    @Override
+    public BurnupChartDTO getBurnupChart(Integer sprintId) {
+        Sprint sprint = findSprintAndVerifyAccess(sprintId);
+        Integer projectId = sprint.getProject().getId();
+
+        List<SprintIssueEvent> sprintEvents = sprintIssueEventRepository
+                .findAllBySprintIdOrderByOccurredAtAscIdAsc(sprintId)
+                .stream()
+                .filter(event -> event != null && sprintId.equals(event.getSprintId()))
+                .toList();
+
+        List<BurnupPointDTO> points = buildBurnupPoints(sprint, sprintEvents);
+
+        return BurnupChartDTO.builder()
+                .sprintId(sprint.getId())
+                .sprintName(sprint.getName())
+                .projectId(projectId)
+                .startDate(sprint.getStartDate())
+                .endDate(sprint.getEndDate())
+                .unit(DEFAULT_ESTIMATION_UNIT)
+                .points(points)
+                .build();
+    }
+
+    private Sprint findSprintAndVerifyAccess(Integer sprintId) {
+        if (sprintId == null) {
+            throw new NullIdentifierException();
+        }
+
+        Sprint sprint = sprintRepository.findById(sprintId)
+                .orElseThrow(() -> new ResourceNotFoundException(SPRINT_DOES_NOT_EXISTS));
+
+        userService.verifyProjectAccess(sprint.getProject().getId());
+        return sprint;
+    }
+
+    private List<BurnupPointDTO> buildBurnupPoints(Sprint sprint, List<SprintIssueEvent> events) {
+        if (events.isEmpty()) {
+            return buildFallbackBurnupPoints(sprint);
+        }
+
+        List<SprintIssueEvent> timelineEvents = new ArrayList<>();
+        LocalDate stopEventDay = null;
+        for (SprintIssueEvent event : events) {
+            if (event.getEventType() == SprintEventType.SPRINT_STOPPED) {
+                if (event.getOccurredAt() != null) {
+                    stopEventDay = toUtcDate(event.getOccurredAt());
+                }
+                break;
+            }
+            timelineEvents.add(event);
+        }
+
+        LocalDate startDay = resolveStartDay(sprint, timelineEvents, stopEventDay);
+        if (startDay == null) {
+            return Collections.emptyList();
+        }
+        LocalDate endDay = resolveEndDay(sprint, timelineEvents, stopEventDay, startDay);
+
+        Map<Integer, IssueSnapshot> scope = new LinkedHashMap<>();
+        List<BurnupPointDTO> points = new ArrayList<>();
+        int eventIndex = 0;
+
+        for (LocalDate day = startDay; !day.isAfter(endDay); day = day.plusDays(1)) {
+            while (eventIndex < timelineEvents.size()) {
+                SprintIssueEvent event = timelineEvents.get(eventIndex);
+                LocalDate eventDay = event.getOccurredAt() != null ? toUtcDate(event.getOccurredAt()) : startDay;
+                if (eventDay.isAfter(day)) {
+                    break;
+                }
+                applyEvent(scope, event);
+                eventIndex++;
+            }
+
+            int totalScope = scope.values().stream()
+                    .mapToInt(snapshot -> sprintVelocityCalculator.safeEstimation(snapshot.estimation()))
+                    .sum();
+            int completedWork = scope.values().stream()
+                    .filter(snapshot -> IssueStatusID.isCompleted(snapshot.statusId()))
+                    .mapToInt(snapshot -> sprintVelocityCalculator.safeEstimation(snapshot.estimation()))
+                    .sum();
+
+            points.add(BurnupPointDTO.builder()
+                    .date(day)
+                    .completedWork(Math.max(0, completedWork))
+                    .totalScope(Math.max(0, totalScope))
+                    .unit(DEFAULT_ESTIMATION_UNIT)
+                    .build());
+        }
+
+        return points;
+    }
+
+    private List<BurnupPointDTO> buildFallbackBurnupPoints(Sprint sprint) {
+        if (sprint.getStartDate() == null) {
+            return Collections.emptyList();
+        }
+
+        Integer sprintId = sprint.getId();
+        List<Issue> sprintIssues = issueRepository.findAllBySprintId(sprintId).stream()
+                .filter(issue -> issue != null
+                        && issue.getSprint() != null
+                        && sprintId.equals(issue.getSprint().getId()))
+                .toList();
+
+        int totalScope = sprintIssues.stream()
+                .mapToInt(sprintVelocityCalculator::safeEstimation)
+                .sum();
+        int completedWork = sprintVelocityCalculator.calculateVelocity(sprintId, sprintIssues);
+
+        ZonedDateTime pointTimestamp = sprint.getEndDate() != null ? sprint.getEndDate() : sprint.getStartDate();
+        return List.of(BurnupPointDTO.builder()
+                .date(toUtcDate(pointTimestamp))
+                .completedWork(Math.max(0, completedWork))
+                .totalScope(Math.max(0, totalScope))
+                .unit(DEFAULT_ESTIMATION_UNIT)
+                .build());
+    }
+
+    private LocalDate resolveStartDay(Sprint sprint, List<SprintIssueEvent> timelineEvents, LocalDate stopEventDay) {
+        if (sprint.getStartDate() != null) {
+            return toUtcDate(sprint.getStartDate());
+        }
+        return timelineEvents.stream()
+                .map(SprintIssueEvent::getOccurredAt)
+                .filter(java.util.Objects::nonNull)
+                .findFirst()
+                .map(this::toUtcDate)
+                .orElse(stopEventDay);
+    }
+
+    private LocalDate resolveEndDay(
+            Sprint sprint,
+            List<SprintIssueEvent> timelineEvents,
+            LocalDate stopEventDay,
+            LocalDate startDay
+    ) {
+        LocalDate endDay;
+        if (sprint.getEndDate() != null) {
+            endDay = toUtcDate(sprint.getEndDate());
+        } else if (stopEventDay != null) {
+            endDay = stopEventDay;
+        } else {
+            endDay = LocalDate.now(ZoneOffset.UTC);
+        }
+
+        if (endDay.isBefore(startDay)) {
+            endDay = startDay;
+        }
+        if (sprint.getEndDate() == null) {
+            for (SprintIssueEvent event : timelineEvents) {
+                if (event.getOccurredAt() != null) {
+                    LocalDate eventDay = toUtcDate(event.getOccurredAt());
+                    if (eventDay.isAfter(endDay)) {
+                        endDay = eventDay;
+                    }
+                }
+            }
+        }
+        return endDay;
+    }
+
+    private LocalDate toUtcDate(ZonedDateTime dateTime) {
+        return dateTime.withZoneSameInstant(ZoneOffset.UTC).toLocalDate();
+    }
+
     private int resolveInitialIssueCount(List<SprintIssueEvent> events, int fallbackCount) {
         int startedCount = (int) events.stream()
                 .filter(event -> event.getEventType() == SprintEventType.SPRINT_STARTED)
@@ -103,26 +269,30 @@ public class SprintAnalyticsServiceImpl implements SprintAnalyticsService {
             if (event.getEventType() == SprintEventType.SPRINT_STOPPED) {
                 break;
             }
-            Integer issueId = event.getIssueId();
-            if (issueId == null) {
-                continue;
-            }
-            switch (event.getEventType()) {
-                case SPRINT_STARTED, ADDED_TO_SPRINT, STATUS_CHANGED ->
-                        scopeAtStop.put(issueId, new IssueSnapshot(event.getStatusId(), event.getEstimation()));
-                case REMOVED_FROM_SPRINT -> scopeAtStop.remove(issueId);
-                case ESTIMATION_CHANGED -> scopeAtStop.compute(issueId, (id, existing) -> new IssueSnapshot(
-                        event.getStatusId() != null ? event.getStatusId() : (existing != null ? existing.statusId() : null),
-                        event.getEstimation()
-                ));
-                case SPRINT_STOPPED -> {
-                }
-            }
+            applyEvent(scopeAtStop, event);
         }
 
         return scopeAtStop.values().stream()
                 .filter(snapshot -> !IssueStatusID.isCompleted(snapshot.statusId()))
                 .toList();
+    }
+
+    private void applyEvent(Map<Integer, IssueSnapshot> scope, SprintIssueEvent event) {
+        Integer issueId = event.getIssueId();
+        if (issueId == null) {
+            return;
+        }
+        switch (event.getEventType()) {
+            case SPRINT_STARTED, ADDED_TO_SPRINT, STATUS_CHANGED ->
+                    scope.put(issueId, new IssueSnapshot(event.getStatusId(), event.getEstimation()));
+            case REMOVED_FROM_SPRINT -> scope.remove(issueId);
+            case ESTIMATION_CHANGED -> scope.compute(issueId, (id, existing) -> new IssueSnapshot(
+                    event.getStatusId() != null ? event.getStatusId() : (existing != null ? existing.statusId() : null),
+                    event.getEstimation()
+            ));
+            case SPRINT_STOPPED -> {
+            }
+        }
     }
 
     private record IssueSnapshot(Integer statusId, Integer estimation) {

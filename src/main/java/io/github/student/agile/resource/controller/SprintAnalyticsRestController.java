@@ -1,6 +1,7 @@
 package io.github.student.agile.resource.controller;
 
 import io.github.student.agile.exception.dto.ApiErrorResponse;
+import io.github.student.agile.resource.dto.BurnupChartDTO;
 import io.github.student.agile.resource.dto.SprintSummaryReportDTO;
 import io.github.student.agile.resource.service.SprintAnalyticsService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -62,5 +63,44 @@ public class SprintAnalyticsRestController {
             @PathVariable Integer sprintId
     ) {
         return ResponseEntity.ok(sprintAnalyticsService.getSprintSummaryReport(sprintId));
+    }
+
+    @Operation(
+            summary = "Pobierz dane do wykresu Burnup sprintu",
+            description = "Zwraca chronologiczną serię punktów dziennych (date, completedWork, totalScope, unit) odzwierciedlającą skumulowaną pracę ukończoną (DONE) oraz całkowity zakres sprintu w jednostce STORY_POINTS."
+    )
+    @ApiResponses(value = {
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "Dane wykresu Burnup zostały wygenerowane",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = BurnupChartDTO.class))
+            ),
+            @ApiResponse(
+                    responseCode = "400",
+                    description = "Niepoprawny parametr zapytania",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiErrorResponse.class))
+            ),
+            @ApiResponse(
+                    responseCode = "401",
+                    description = "Brak lub nieprawidłowy token JWT",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiErrorResponse.class))
+            ),
+            @ApiResponse(
+                    responseCode = "403",
+                    description = "Brak dostępu do projektu powiązanego ze sprintem",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiErrorResponse.class))
+            ),
+            @ApiResponse(
+                    responseCode = "404",
+                    description = "Sprint o podanym identyfikatorze nie istnieje",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiErrorResponse.class))
+            )
+    })
+    @GetMapping("/sprints/{sprintId}/burnup")
+    public ResponseEntity<BurnupChartDTO> getBurnupChart(
+            @Parameter(description = "Identyfikator sprintu", example = "1", required = true)
+            @PathVariable Integer sprintId
+    ) {
+        return ResponseEntity.ok(sprintAnalyticsService.getBurnupChart(sprintId));
     }
 }

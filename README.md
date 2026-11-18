@@ -20,6 +20,7 @@
 - [Technology Stack](#technology-stack)
 - [Prerequisites](#prerequisites)
 - [Getting Started](#getting-started)
+- [Running Tests](#running-tests)
 - [Authentication](#authentication)
 - [API Documentation](#api-documentation)
 - [Useful URLs](#useful-urls)
@@ -111,7 +112,15 @@ cd agile-project
 
 Replace `<repository-url>` with the URL of your Git repository.
 
-### 2. Start the application
+### 2. Create the `.env` file
+
+Docker Compose reads passwords and secrets from `.env`, which is not committed. Create it from the template:
+
+```bash
+cp .env.example .env
+```
+
+### 3. Start the application
 
 Run the following command from the repository root:
 
@@ -127,7 +136,7 @@ To run the stack in the background:
 docker compose -f compose.yaml up --build -d
 ```
 
-### 3. Verify the services
+### 4. Verify the services
 
 Once the services have started, the main endpoints are:
 
@@ -140,7 +149,7 @@ Once the services have started, the main endpoints are:
 
 The API may require authentication for protected endpoints.
 
-### 4. Stop the application
+### 5. Stop the application
 
 ```bash
 docker compose -f compose.yaml down
@@ -153,6 +162,28 @@ docker compose -f compose.yaml down -v
 ```
 
 **Warning:** The `-v` option removes associated volumes and can permanently delete locally stored database data.
+
+## Running Tests
+
+The tests use an in-memory H2 database and need JDK 21:
+
+```bash
+./mvnw test
+```
+
+Without JDK 21, run them in a Maven container:
+
+```bash
+docker run --rm -v "$(pwd):/app" -v maven-repo:/root/.m2 -w /app maven:3.9-eclipse-temurin-21 ./mvnw test
+```
+
+### Code coverage
+
+```bash
+./mvnw verify
+```
+
+The JaCoCo report is written to `target/site/jacoco/index.html`. Coverage is measured for all production code, without exclusions, and the build fails when instruction coverage is below 75%.
 
 ## Authentication
 

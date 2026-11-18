@@ -7,8 +7,12 @@ import io.github.student.agile.resource.dto.analytics.SprintReportDTO;
 import io.github.student.agile.resource.service.SprintChartService;
 import io.github.student.agile.resource.service.SprintComparisonService;
 import io.github.student.agile.resource.service.SprintReportService;
+import io.github.student.agile.resource.service.analytics.SprintComparisonCsvWriter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -16,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 
 @RestController
@@ -23,9 +28,12 @@ import java.time.LocalDate;
 @RequiredArgsConstructor
 public class AnalyticsRestController {
 
+    static final MediaType TEXT_CSV = new MediaType("text", "csv", StandardCharsets.UTF_8);
+
     private final SprintReportService sprintReportService;
     private final SprintChartService sprintChartService;
     private final SprintComparisonService sprintComparisonService;
+    private final SprintComparisonCsvWriter sprintComparisonCsvWriter;
 
     @GetMapping("/sprints/{sprintID}/report")
     public ResponseEntity<SprintReportDTO> getSprintReport(@PathVariable Integer sprintID) {
@@ -52,5 +60,20 @@ public class AnalyticsRestController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
         return ResponseEntity.ok(sprintComparisonService.compareSprints(projectID, from, to));
+    }
+
+    @GetMapping("/projects/{projectID}/sprints/export.csv")
+    public ResponseEntity<String> exportProjectSprints(
+            @PathVariable Integer projectID,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        String csv = sprintComparisonCsvWriter.write(sprintComparisonService.compareSprints(projectID, from, to));
+        ContentDisposition attachment = ContentDisposition.attachment()
+                .filename("project-%d-sprints.csv".formatted(projectID))
+                .build();
+        return ResponseEntity.ok()
+                .contentType(TEXT_CSV)
+                .header(HttpHeaders.CONTENT_DISPOSITION, attachment.toString())
+                .body(csv);
     }
 }

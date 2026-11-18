@@ -1,5 +1,7 @@
 package io.github.student.agile.resource.service;
 
+import io.github.student.agile.exception.definition.ProjectAccessDeniedException;
+import io.github.student.agile.exception.definition.ResourceNotFoundException;
 import io.github.student.agile.resource.domain.Backlog;
 import io.github.student.agile.resource.domain.Project;
 import io.github.student.agile.resource.dto.ProjectDTO;
@@ -35,7 +37,7 @@ public class ProjectServiceImpl implements ProjectService {
     @Override
     public ProjectDetailsDTO getProjectDetails(Integer projectID) {
         Project project = projectRepository.findById(projectID)
-                .orElseThrow(() -> new RuntimeException(PROJECT_DOES_NOT_EXISTS));
+                .orElseThrow(() -> new ResourceNotFoundException(PROJECT_DOES_NOT_EXISTS));
         ProjectDetailsDTO detailsDTO = new ProjectDetailsDTO();
         detailsDTO.setProjectID(project.getId());
         detailsDTO.setName(project.getName());
@@ -51,7 +53,7 @@ public class ProjectServiceImpl implements ProjectService {
 
         String currentLoggedUser = userService.getCurrentLoggedUser().getUuid();
         if (projectRepository.existsByNameAndProjectOwner(projectCreationRequest.getName(), currentLoggedUser)) {
-            throw new RuntimeException(PROJECT_NAME_NOT_UNIQUE);
+            throw new IllegalArgumentException(PROJECT_NAME_NOT_UNIQUE);
         }
 
         HashSet<String> usersAssociatedWithProject = new HashSet<>();
@@ -77,7 +79,7 @@ public class ProjectServiceImpl implements ProjectService {
     public ProjectDTO updateProject(ProjectDTO projectDTO) {
 
         Project updated = projectRepository.findById(projectDTO.getProjectID())
-                .orElseThrow(() -> new RuntimeException(PROJECT_DOES_NOT_EXISTS));
+                .orElseThrow(() -> new ResourceNotFoundException(PROJECT_DOES_NOT_EXISTS));
         updated.setName(projectDTO.getName());
         updated.setDescription(projectDTO.getDescription());
         updated.setProjectGoal(projectDTO.getProjectGoal());
@@ -89,7 +91,7 @@ public class ProjectServiceImpl implements ProjectService {
     public ProjectDTO deleteProject(Integer projectID) {
 
         Project project = projectRepository.findById(projectID)
-                .orElseThrow(() -> new RuntimeException(PROJECT_DOES_NOT_EXISTS));
+                .orElseThrow(() -> new ResourceNotFoundException(PROJECT_DOES_NOT_EXISTS));
         projectRepository.deleteById(projectID);
         return projectDTOMapper.map(project);
     }
@@ -107,11 +109,11 @@ public class ProjectServiceImpl implements ProjectService {
     public void associateUserWithProject(String email, Integer projectID) {
 
         if (!userService.isProjectOwner(projectID)) {
-            throw new RuntimeException(ACTION_NOT_ALLOWED);
+            throw new ProjectAccessDeniedException(ACTION_NOT_ALLOWED);
         }
 
         Project updated = projectRepository.findById(projectID)
-                .orElseThrow(() -> new RuntimeException(PROJECT_DOES_NOT_EXISTS));
+                .orElseThrow(() -> new ResourceNotFoundException(PROJECT_DOES_NOT_EXISTS));
         String userUUID = userService.getUserByEmail(email).getUuid();
         Set<String> usersAssociatedWithProject = updated.getUserIDs();
 
@@ -121,7 +123,7 @@ public class ProjectServiceImpl implements ProjectService {
             updated.setUserIDs(usersAssociatedWithProject);
             projectRepository.save(updated);
         } else {
-            throw new RuntimeException(USERS_NUMBER_EXCEEDED);
+            throw new IllegalArgumentException(USERS_NUMBER_EXCEEDED);
         }
     }
 
@@ -129,11 +131,11 @@ public class ProjectServiceImpl implements ProjectService {
     public void deleteUserFromProject(String uuid, Integer projectID) {
 
         if (!userService.isProjectOwner(projectID)) {
-            throw new RuntimeException(ACTION_NOT_ALLOWED);
+            throw new ProjectAccessDeniedException(ACTION_NOT_ALLOWED);
         }
 
         Project updated = projectRepository.findById(projectID)
-                .orElseThrow(() -> new RuntimeException(PROJECT_DOES_NOT_EXISTS));
+                .orElseThrow(() -> new ResourceNotFoundException(PROJECT_DOES_NOT_EXISTS));
 
         // contains user existing verification
         String userUUID = userService.getUserByUUID(uuid).getUuid();

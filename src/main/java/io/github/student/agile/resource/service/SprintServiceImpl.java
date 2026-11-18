@@ -1,6 +1,7 @@
 package io.github.student.agile.resource.service;
 
 import io.github.student.agile.exception.definition.NullIdentifierException;
+import io.github.student.agile.exception.definition.ResourceNotFoundException;
 import io.github.student.agile.resource.domain.Issue;
 import io.github.student.agile.resource.domain.IssueStatus;
 import io.github.student.agile.resource.domain.Project;
@@ -61,7 +62,7 @@ public class SprintServiceImpl implements SprintService {
     public SprintDTO getActiveSprint(Integer projectID) {
 
         Project project = projectRepository.findById(projectID)
-                .orElseThrow(() -> new RuntimeException(PROJECT_DOES_NOT_EXISTS));
+                .orElseThrow(() -> new ResourceNotFoundException(PROJECT_DOES_NOT_EXISTS));
 
         if (sprintRepository.findByActiveAndProject(TRUE, project).isPresent()) {
             return sprintDTOMapper.map(sprintRepository.findByActiveAndProject(TRUE, project).get());
@@ -73,7 +74,7 @@ public class SprintServiceImpl implements SprintService {
     public List<SprintDTO> getAllNonActivatedSprints(Integer projectID) {
 
         Project project = projectRepository.findById(projectID)
-                .orElseThrow(() -> new RuntimeException(PROJECT_DOES_NOT_EXISTS));
+                .orElseThrow(() -> new ResourceNotFoundException(PROJECT_DOES_NOT_EXISTS));
 
         if (sprintRepository.findAllByActiveAndIsDoneAndProject(FALSE, FALSE, project).isEmpty()) {
             return new ArrayList<>();
@@ -90,10 +91,10 @@ public class SprintServiceImpl implements SprintService {
     public SprintDTO createSprint(SprintDTO sprintDTO) {
 
         Project project = projectRepository.findById(sprintDTO.getProjectID())
-                .orElseThrow(() -> new RuntimeException(PROJECT_DOES_NOT_EXISTS));
+                .orElseThrow(() -> new ResourceNotFoundException(PROJECT_DOES_NOT_EXISTS));
 
         if (sprintRepository.existsByNameAndProject(sprintDTO.getName(), project)) {
-            throw new RuntimeException(SPRINT_NAME_NOT_UNIQUE);
+            throw new IllegalArgumentException(SPRINT_NAME_NOT_UNIQUE);
         }
 
         Sprint sprint = Sprint.builder()
@@ -113,14 +114,14 @@ public class SprintServiceImpl implements SprintService {
     public SprintDTO updateSprint(SprintDTO sprintDTO) {
 
         Project project = projectRepository.findById(sprintDTO.getProjectID())
-                .orElseThrow(() -> new RuntimeException(PROJECT_DOES_NOT_EXISTS));
+                .orElseThrow(() -> new ResourceNotFoundException(PROJECT_DOES_NOT_EXISTS));
 
         Sprint updated = sprintRepository.findById(sprintDTO.getId())
-                .orElseThrow(() -> new RuntimeException(SPRINT_DOES_NOT_EXISTS));
+                .orElseThrow(() -> new ResourceNotFoundException(SPRINT_DOES_NOT_EXISTS));
 
         if (!updated.getName().equals(sprintDTO.getName())) {
             if (sprintRepository.existsByNameAndProject(sprintDTO.getName(), project)) {
-                throw new RuntimeException(SPRINT_NAME_NOT_UNIQUE);
+                throw new IllegalArgumentException(SPRINT_NAME_NOT_UNIQUE);
             }
         }
 
@@ -136,7 +137,7 @@ public class SprintServiceImpl implements SprintService {
     public void deleteSprint(Integer sprintID) {
 
         Sprint sprintToBeDeleted = sprintRepository.findById(sprintID)
-                .orElseThrow(() -> new RuntimeException(SPRINT_DOES_NOT_EXISTS));
+                .orElseThrow(() -> new ResourceNotFoundException(SPRINT_DOES_NOT_EXISTS));
 
         if (!sprintToBeDeleted.getSprintIssues().isEmpty()) {
             List<Issue> issues = issueRepository.findAllBySprint(sprintToBeDeleted)
@@ -157,11 +158,11 @@ public class SprintServiceImpl implements SprintService {
     public void addIssueToSprint(Integer issueID, Integer sprintID) {
 
         Issue issue = issueRepository.findById(issueID)
-                .orElseThrow(() -> new RuntimeException(ISSUE_DOES_NOT_EXISTS));
+                .orElseThrow(() -> new ResourceNotFoundException(ISSUE_DOES_NOT_EXISTS));
         Sprint sprint = sprintRepository.findById(sprintID)
-                .orElseThrow(() -> new RuntimeException(SPRINT_DOES_NOT_EXISTS));
+                .orElseThrow(() -> new ResourceNotFoundException(SPRINT_DOES_NOT_EXISTS));
         if (!isNull(issue.getSprint())) {
-            throw new RuntimeException(ISSUE_ALREADY_HAS_SPRINT);
+            throw new IllegalArgumentException(ISSUE_ALREADY_HAS_SPRINT);
         }
 
         Set<Issue> sprintIssues;
@@ -183,9 +184,9 @@ public class SprintServiceImpl implements SprintService {
     public void deleteIssueFromSprint(Integer sprintID, Integer issueID) {
 
         Sprint sprint = sprintRepository.findById(sprintID)
-                .orElseThrow(() -> new RuntimeException(SPRINT_DOES_NOT_EXISTS));
+                .orElseThrow(() -> new ResourceNotFoundException(SPRINT_DOES_NOT_EXISTS));
         Issue issue = issueRepository.findById(issueID)
-                .orElseThrow(() -> new RuntimeException(ISSUE_DOES_NOT_EXISTS));
+                .orElseThrow(() -> new ResourceNotFoundException(ISSUE_DOES_NOT_EXISTS));
 
         Set<Issue> sprintIssues = sprint.getSprintIssues();
         boolean removedFromSet = sprintIssues != null && sprintIssues.remove(issue);
@@ -205,19 +206,19 @@ public class SprintServiceImpl implements SprintService {
     public void startSprint(Integer sprintID) {
 
         Sprint updated = sprintRepository.findById(ofNullable(sprintID).orElseThrow(NullIdentifierException::new))
-                .orElseThrow(() -> new IllegalArgumentException(SPRINT_DOES_NOT_EXISTS));
+                .orElseThrow(() -> new ResourceNotFoundException(SPRINT_DOES_NOT_EXISTS));
 
         if(sprintRepository.findByActiveAndProject(TRUE, updated.getProject()).isPresent()) {
-            throw new RuntimeException(ACTIVE_SPRINT_EXISTS);
+            throw new IllegalArgumentException(ACTIVE_SPRINT_EXISTS);
         }
 
         if (updated.getSprintIssues().isEmpty()) {
-            throw new RuntimeException(EMPTY_SPRINT);
+            throw new IllegalArgumentException(EMPTY_SPRINT);
         }
 
         Pair<Boolean, String> validationResult = validateSprintDatesForStart(updated);
         if (!validationResult.getKey()) {
-            throw new RuntimeException(validationResult.getValue());
+            throw new IllegalArgumentException(validationResult.getValue());
         }
 
         ZonedDateTime startedAt = ZonedDateTime.now();
@@ -234,10 +235,10 @@ public class SprintServiceImpl implements SprintService {
     public void stopSprint(Integer projectID) {
 
         Project project = projectRepository.findById(projectID)
-                .orElseThrow(() -> new RuntimeException(PROJECT_DOES_NOT_EXISTS));
+                .orElseThrow(() -> new ResourceNotFoundException(PROJECT_DOES_NOT_EXISTS));
 
         Sprint updated = sprintRepository.findByActiveAndProject(TRUE, project)
-                .orElseThrow(() -> new RuntimeException(NO_ACTIVE_SPRINT_IN_PROJECT));
+                .orElseThrow(() -> new ResourceNotFoundException(NO_ACTIVE_SPRINT_IN_PROJECT));
 
         Pair<Set<Issue>, Set<Issue>> dividedSet = splitSetIntoTwoSubSets(
                 updated.getSprintIssues(),

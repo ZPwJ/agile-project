@@ -5,12 +5,15 @@ import io.github.student.agile.resource.domain.dictionary.SprintEventType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 
 @Repository
 public interface SprintIssueEventRepository extends JpaRepository<SprintIssueEvent, Long> {
 
     List<SprintIssueEvent> findAllBySprintIdOrderByOccurredAtAscIdAsc(Integer sprintId);
+
+    List<SprintIssueEvent> findAllBySprintIdInOrderByOccurredAtAscIdAsc(Collection<Integer> sprintIds);
 
     List<SprintIssueEvent> findAllBySprintIdAndEventTypeOrderByOccurredAtAscIdAsc(Integer sprintId, SprintEventType eventType);
 

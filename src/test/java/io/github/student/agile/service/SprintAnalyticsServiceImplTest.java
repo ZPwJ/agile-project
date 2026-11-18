@@ -12,6 +12,7 @@ import io.github.student.agile.resource.domain.dictionary.IssueStatusID;
 import io.github.student.agile.resource.domain.dictionary.SprintEventType;
 import io.github.student.agile.resource.dto.BurnupChartDTO;
 import io.github.student.agile.resource.dto.BurnupPointDTO;
+import io.github.student.agile.resource.dto.SprintComparisonItemDTO;
 import io.github.student.agile.resource.dto.SprintSummaryReportDTO;
 import io.github.student.agile.resource.repository.IssueRepository;
 import io.github.student.agile.resource.repository.SprintIssueEventRepository;
@@ -33,6 +34,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.ACTION_NOT_ALLOWED;
+import static io.github.student.agile.exception.dictionary.ExceptionMessages.PROJECT_DOES_NOT_EXISTS;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.SPRINT_DOES_NOT_EXISTS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -487,6 +489,147 @@ public class SprintAnalyticsServiceImplTest {
         doThrow(new ProjectAccessDeniedException(ACTION_NOT_ALLOWED)).when(userService).verifyProjectAccess(50);
 
         assertThrows(ProjectAccessDeniedException.class, () -> sprintAnalyticsService.getBurnupChart(206));
+    }
+
+    @Test
+    public void getProjectSprintsComparison_returnsSortedSprintsIncludingZeroVelocityAndExcludesPlannedDrafts() {
+        Integer projectId = 10;
+        Project project = Project.builder().id(projectId).build();
+        ZonedDateTime day1 = ZonedDateTime.of(2026, 11, 1, 9, 0, 0, 0, ZoneOffset.UTC);
+        ZonedDateTime day10 = ZonedDateTime.of(2026, 11, 10, 9, 0, 0, 0, ZoneOffset.UTC);
+
+        // Intentionally returned out of order by repository to verify deterministic sorting (startDate ASC, id ASC)
+        Sprint sprintSameStartLaterId = Sprint.builder()
+                .id(3)
+                .name("Sprint Zero Velocity")
+                .project(project)
+                .startDate(day1)
+                .endDate(day1.plusDays(4))
+                .active(false)
+                .isDone(true)
+                .build();
+        Sprint sprintEarlierId = Sprint.builder()
+                .id(1)
+                .name("Sprint 1")
+                .project(project)
+                .startDate(day1)
+                .endDate(day1.plusDays(5))
+                .active(false)
+                .isDone(true)
+                .build();
+        Sprint activeSprint = Sprint.builder()
+                .id(5)
+                .name("Active Sprint")
+                .project(project)
+                .startDate(day10)
+                .endDate(null)
+                .active(true)
+                .isDone(false)
+                .build();
+        Sprint plannedDraftSprint = Sprint.builder()
+                .id(2)
+                .name("Planned Draft")
+                .project(project)
+                .startDate(day1)
+                .active(false)
+                .isDone(false)
+                .build();
+
+        Issue sprint1Done = Issue.builder()
+                .id(11)
+                .sprint(sprintEarlierId)
+                .issueStatus(new IssueStatus(IssueStatusID.DONE.getStatusID(), null))
+                .estimation(8)
+                .build();
+        Issue sprint3DoneNullEst = Issue.builder()
+                .id(12)
+                .sprint(sprintSameStartLaterId)
+                .issueStatus(new IssueStatus(IssueStatusID.DONE.getStatusID(), null))
+                .estimation(null)
+                .build();
+        Issue sprint5InProgress = Issue.builder()
+                .id(13)
+                .sprint(activeSprint)
+                .issueStatus(new IssueStatus(IssueStatusID.IN_PROGRESS.getStatusID(), null))
+                .estimation(5)
+                .build();
+
+        // Sprint 1 had 1 uncompleted issue moved back to backlog at stopSprint
+        List<SprintIssueEvent> events = List.of(
+                event(1, 11, SprintEventType.SPRINT_STARTED, IssueStatusID.TO_DO.getStatusID(), 8, day1),
+                event(1, 99, SprintEventType.SPRINT_STARTED, IssueStatusID.TO_DO.getStatusID(), 3, day1),
+                event(1, 11, SprintEventType.STATUS_CHANGED, IssueStatusID.DONE.getStatusID(), 8, day1.plusDays(2)),
+                event(1, null, SprintEventType.SPRINT_STOPPED, null, null, day1.plusDays(5))
+        );
+
+        when(sprintRepository.findAllByProjectIdOrderByStartDateAscIdAsc(projectId))
+                .thenReturn(List.of(sprintSameStartLaterId, plannedDraftSprint, activeSprint, sprintEarlierId));
+        when(issueRepository.findAllBySprintIdIn(List.of(1, 3, 5)))
+                .thenReturn(List.of(sprint1Done, sprint3DoneNullEst, sprint5InProgress));
+        when(sprintIssueEventRepository.findAllBySprintIdInOrderByOccurredAtAscIdAsc(List.of(1, 3, 5)))
+                .thenReturn(events);
+
+        List<SprintComparisonItemDTO> result = sprintAnalyticsService.getProjectSprintsComparison(projectId);
+
+        verify(userService).verifyProjectAccess(projectId);
+        assertEquals(3, result.size());
+
+        // Order: id=1 (day1), id=3 (day1), id=5 (day10)
+        SprintComparisonItemDTO first = result.get(0);
+        assertEquals(projectId, first.getProjectId());
+        assertEquals(1, first.getSprintId());
+        assertEquals("Sprint 1", first.getSprintName());
+        assertEquals(1, first.getCompletedIssueCount());
+        assertEquals(1, first.getUncompletedIssueCount());
+        assertEquals(8, first.getVelocity());
+
+        SprintComparisonItemDTO second = result.get(1);
+        assertEquals(3, second.getSprintId());
+        assertEquals("Sprint Zero Velocity", second.getSprintName());
+        assertEquals(1, second.getCompletedIssueCount());
+        assertEquals(0, second.getUncompletedIssueCount());
+        assertEquals(0, second.getVelocity());
+
+        SprintComparisonItemDTO third = result.get(2);
+        assertEquals(5, third.getSprintId());
+        assertNull(third.getEndDate());
+        assertEquals(0, third.getCompletedIssueCount());
+        assertEquals(1, third.getUncompletedIssueCount());
+        assertEquals(0, third.getVelocity());
+    }
+
+    @Test
+    public void getProjectSprintsComparison_returnsEmptyListWhenProjectHasNoStartedOrDoneSprints() {
+        Integer projectId = 20;
+        Sprint plannedOnly = Sprint.builder()
+                .id(1)
+                .project(Project.builder().id(projectId).build())
+                .active(false)
+                .isDone(false)
+                .build();
+
+        when(sprintRepository.findAllByProjectIdOrderByStartDateAscIdAsc(projectId))
+                .thenReturn(List.of(plannedOnly));
+
+        List<SprintComparisonItemDTO> result = sprintAnalyticsService.getProjectSprintsComparison(projectId);
+
+        assertTrue(result.isEmpty());
+        verifyNoInteractions(issueRepository, sprintIssueEventRepository);
+    }
+
+    @Test
+    public void getProjectSprintsComparison_throwsOnNullMissingProjectAndUnauthorizedAccess() {
+        assertThrows(NullIdentifierException.class, () -> sprintAnalyticsService.getProjectSprintsComparison(null));
+
+        doThrow(new ResourceNotFoundException(PROJECT_DOES_NOT_EXISTS))
+                .when(userService).verifyProjectAccess(999);
+        assertThrows(ResourceNotFoundException.class, () -> sprintAnalyticsService.getProjectSprintsComparison(999));
+
+        doThrow(new ProjectAccessDeniedException(ACTION_NOT_ALLOWED))
+                .when(userService).verifyProjectAccess(50);
+        assertThrows(ProjectAccessDeniedException.class, () -> sprintAnalyticsService.getProjectSprintsComparison(50));
+
+        verifyNoInteractions(sprintRepository, issueRepository, sprintIssueEventRepository);
     }
 
     private void assertPoint(BurnupPointDTO point, LocalDate expectedDate, int expectedCompleted, int expectedScope) {

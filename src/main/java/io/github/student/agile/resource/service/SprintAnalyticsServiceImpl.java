@@ -9,6 +9,7 @@ import io.github.student.agile.resource.domain.dictionary.IssueStatusID;
 import io.github.student.agile.resource.domain.dictionary.SprintEventType;
 import io.github.student.agile.resource.dto.BurnupChartDTO;
 import io.github.student.agile.resource.dto.BurnupPointDTO;
+import io.github.student.agile.resource.dto.SprintComparisonItemDTO;
 import io.github.student.agile.resource.dto.SprintSummaryReportDTO;
 import io.github.student.agile.resource.repository.IssueRepository;
 import io.github.student.agile.resource.repository.SprintIssueEventRepository;
@@ -22,9 +23,11 @@ import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.SPRINT_DOES_NOT_EXISTS;
 
@@ -110,6 +113,77 @@ public class SprintAnalyticsServiceImpl implements SprintAnalyticsService {
                 .endDate(sprint.getEndDate())
                 .unit(DEFAULT_ESTIMATION_UNIT)
                 .points(points)
+                .build();
+    }
+
+    @Override
+    public List<SprintComparisonItemDTO> getProjectSprintsComparison(Integer projectId) {
+        if (projectId == null) {
+            throw new NullIdentifierException();
+        }
+
+        userService.verifyProjectAccess(projectId);
+
+        List<Sprint> qualifyingSprints = sprintRepository.findAllByProjectIdOrderByStartDateAscIdAsc(projectId).stream()
+                .filter(sprint -> sprint != null
+                        && (sprint.getProject() == null || projectId.equals(sprint.getProject().getId()))
+                        && (Boolean.TRUE.equals(sprint.getIsDone()) || Boolean.TRUE.equals(sprint.getActive())))
+                .sorted(Comparator
+                        .comparing(Sprint::getStartDate, Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(Sprint::getId, Comparator.nullsLast(Comparator.naturalOrder())))
+                .toList();
+
+        if (qualifyingSprints.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<Integer> sprintIds = qualifyingSprints.stream()
+                .map(Sprint::getId)
+                .toList();
+
+        Map<Integer, List<Issue>> issuesBySprintId = issueRepository.findAllBySprintIdIn(sprintIds).stream()
+                .filter(issue -> issue != null && issue.getSprint() != null && issue.getSprint().getId() != null)
+                .collect(Collectors.groupingBy(issue -> issue.getSprint().getId()));
+
+        Map<Integer, List<SprintIssueEvent>> eventsBySprintId = sprintIssueEventRepository
+                .findAllBySprintIdInOrderByOccurredAtAscIdAsc(sprintIds).stream()
+                .filter(event -> event != null && event.getSprintId() != null)
+                .collect(Collectors.groupingBy(SprintIssueEvent::getSprintId));
+
+        return qualifyingSprints.stream()
+                .map(sprint -> toComparisonItem(
+                        projectId,
+                        sprint,
+                        issuesBySprintId.getOrDefault(sprint.getId(), Collections.emptyList()),
+                        eventsBySprintId.getOrDefault(sprint.getId(), Collections.emptyList())
+                ))
+                .toList();
+    }
+
+    private SprintComparisonItemDTO toComparisonItem(
+            Integer projectId,
+            Sprint sprint,
+            List<Issue> sprintIssues,
+            List<SprintIssueEvent> sprintEvents
+    ) {
+        Integer sprintId = sprint.getId();
+        int completedIssueCount = (int) sprintIssues.stream()
+                .filter(IssueStatusID::isCompleted)
+                .count();
+        int velocity = sprintVelocityCalculator.calculateVelocity(sprintId, sprintIssues);
+        int uncompletedIssueCount = (Boolean.TRUE.equals(sprint.getIsDone()) && !sprintEvents.isEmpty())
+                ? resolveUncompletedSnapshotsAtStop(sprintEvents).size()
+                : (int) sprintIssues.stream().filter(issue -> !IssueStatusID.isCompleted(issue)).count();
+
+        return SprintComparisonItemDTO.builder()
+                .projectId(projectId)
+                .sprintId(sprintId)
+                .sprintName(sprint.getName())
+                .startDate(sprint.getStartDate())
+                .endDate(sprint.getEndDate())
+                .completedIssueCount(completedIssueCount)
+                .uncompletedIssueCount(uncompletedIssueCount)
+                .velocity(velocity)
                 .build();
     }
 

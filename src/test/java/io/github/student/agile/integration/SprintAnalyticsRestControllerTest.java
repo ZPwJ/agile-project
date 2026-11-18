@@ -6,6 +6,7 @@ import io.github.student.agile.exception.handler.GlobalExceptionHandler;
 import io.github.student.agile.resource.controller.SprintAnalyticsRestController;
 import io.github.student.agile.resource.dto.BurnupChartDTO;
 import io.github.student.agile.resource.dto.BurnupPointDTO;
+import io.github.student.agile.resource.dto.SprintComparisonItemDTO;
 import io.github.student.agile.resource.dto.SprintSummaryReportDTO;
 import io.github.student.agile.resource.service.SprintAnalyticsService;
 import io.github.student.agile.security.JwtAuthConverter;
@@ -25,6 +26,7 @@ import java.time.ZonedDateTime;
 import java.util.List;
 
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.ACTION_NOT_ALLOWED;
+import static io.github.student.agile.exception.dictionary.ExceptionMessages.PROJECT_DOES_NOT_EXISTS;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.SPRINT_DOES_NOT_EXISTS;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
@@ -236,6 +238,109 @@ public class SprintAnalyticsRestControllerTest {
                 .andExpect(jsonPath("$.status", is(400)))
                 .andExpect(jsonPath("$.error", is("Bad Request")))
                 .andExpect(jsonPath("$.path", is("/api/analytics/sprints/not-a-number/burnup")))
+                .andExpect(jsonPath("$.trace").doesNotExist());
+    }
+
+    @Test
+    public void getProjectSprintsComparison_returns200WithOrderedItemsIncludingZeroVelocity() throws Exception {
+        ZonedDateTime start1 = ZonedDateTime.of(2026, 11, 1, 9, 0, 0, 0, ZoneOffset.UTC);
+        ZonedDateTime end1 = ZonedDateTime.of(2026, 11, 5, 17, 0, 0, 0, ZoneOffset.UTC);
+        ZonedDateTime start2 = ZonedDateTime.of(2026, 11, 6, 9, 0, 0, 0, ZoneOffset.UTC);
+
+        List<SprintComparisonItemDTO> items = List.of(
+                SprintComparisonItemDTO.builder()
+                        .projectId(10)
+                        .sprintId(1)
+                        .sprintName("Sprint 1")
+                        .startDate(start1)
+                        .endDate(end1)
+                        .completedIssueCount(3)
+                        .uncompletedIssueCount(1)
+                        .velocity(13)
+                        .build(),
+                SprintComparisonItemDTO.builder()
+                        .projectId(10)
+                        .sprintId(2)
+                        .sprintName("Sprint 2")
+                        .startDate(start2)
+                        .endDate(null)
+                        .completedIssueCount(0)
+                        .uncompletedIssueCount(2)
+                        .velocity(0)
+                        .build()
+        );
+
+        when(sprintAnalyticsService.getProjectSprintsComparison(10)).thenReturn(items);
+
+        mvc.perform(get("/api/analytics/projects/10/sprints").with(jwt()))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$", hasSize(2)))
+                .andExpect(jsonPath("$[0].projectId", is(10)))
+                .andExpect(jsonPath("$[0].sprintId", is(1)))
+                .andExpect(jsonPath("$[0].sprintName", is("Sprint 1")))
+                .andExpect(jsonPath("$[0].completedIssueCount", is(3)))
+                .andExpect(jsonPath("$[0].uncompletedIssueCount", is(1)))
+                .andExpect(jsonPath("$[0].velocity", is(13)))
+                .andExpect(jsonPath("$[1].projectId", is(10)))
+                .andExpect(jsonPath("$[1].sprintId", is(2)))
+                .andExpect(jsonPath("$[1].sprintName", is("Sprint 2")))
+                .andExpect(jsonPath("$[1].endDate", nullValue()))
+                .andExpect(jsonPath("$[1].completedIssueCount", is(0)))
+                .andExpect(jsonPath("$[1].uncompletedIssueCount", is(2)))
+                .andExpect(jsonPath("$[1].velocity", is(0)));
+    }
+
+    @Test
+    public void getProjectSprintsComparison_returns404WhenProjectDoesNotExist() throws Exception {
+        when(sprintAnalyticsService.getProjectSprintsComparison(999))
+                .thenThrow(new ResourceNotFoundException(PROJECT_DOES_NOT_EXISTS));
+
+        mvc.perform(get("/api/analytics/projects/999/sprints").with(jwt()))
+                .andExpect(status().isNotFound())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.status", is(404)))
+                .andExpect(jsonPath("$.error", is("Not Found")))
+                .andExpect(jsonPath("$.message", is(PROJECT_DOES_NOT_EXISTS)))
+                .andExpect(jsonPath("$.path", is("/api/analytics/projects/999/sprints")))
+                .andExpect(jsonPath("$.trace").doesNotExist());
+    }
+
+    @Test
+    public void getProjectSprintsComparison_returns403WhenUserHasNoProjectAccess() throws Exception {
+        when(sprintAnalyticsService.getProjectSprintsComparison(50))
+                .thenThrow(new ProjectAccessDeniedException(ACTION_NOT_ALLOWED));
+
+        mvc.perform(get("/api/analytics/projects/50/sprints").with(jwt()))
+                .andExpect(status().isForbidden())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.status", is(403)))
+                .andExpect(jsonPath("$.error", is("Forbidden")))
+                .andExpect(jsonPath("$.message", is(ACTION_NOT_ALLOWED)))
+                .andExpect(jsonPath("$.path", is("/api/analytics/projects/50/sprints")))
+                .andExpect(jsonPath("$.trace").doesNotExist());
+    }
+
+    @Test
+    public void getProjectSprintsComparison_returns401WithoutJwt() throws Exception {
+        mvc.perform(get("/api/analytics/projects/10/sprints"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.status", is(401)))
+                .andExpect(jsonPath("$.error", is("Unauthorized")))
+                .andExpect(jsonPath("$.message", is("Authentication required")))
+                .andExpect(jsonPath("$.path", is("/api/analytics/projects/10/sprints")))
+                .andExpect(jsonPath("$.trace").doesNotExist());
+    }
+
+    @Test
+    public void getProjectSprintsComparison_returns400ForInvalidProjectIdType() throws Exception {
+        mvc.perform(get("/api/analytics/projects/not-a-number/sprints").with(jwt()))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.status", is(400)))
+                .andExpect(jsonPath("$.error", is("Bad Request")))
+                .andExpect(jsonPath("$.path", is("/api/analytics/projects/not-a-number/sprints")))
                 .andExpect(jsonPath("$.trace").doesNotExist());
     }
 }

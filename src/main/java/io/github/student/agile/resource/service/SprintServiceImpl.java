@@ -2,8 +2,10 @@ package io.github.student.agile.resource.service;
 
 import io.github.student.agile.exception.definition.NullIdentifierException;
 import io.github.student.agile.resource.domain.Issue;
+import io.github.student.agile.resource.domain.IssueStatus;
 import io.github.student.agile.resource.domain.Project;
 import io.github.student.agile.resource.domain.Sprint;
+import io.github.student.agile.resource.domain.dictionary.IssueStatusID;
 import io.github.student.agile.resource.dto.SprintDTO;
 import io.github.student.agile.resource.mapper.SprintDTOMapper;
 import io.github.student.agile.resource.repository.IssueRepository;
@@ -33,7 +35,6 @@ import static io.github.student.agile.exception.dictionary.ExceptionMessages.SPR
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.SPRINT_DOES_NOT_EXISTS;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.SPRINT_NAME_NOT_UNIQUE;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.SPRINT_START_DATE_IN_THE_FUTURE;
-import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.DONE;
 import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.TO_DO;
 import static io.github.student.agile.utils.DateUtils.reduceTimeFromZonedDateTime;
 import static io.github.student.agile.utils.collection.CollectionsUtils.splitSetIntoTwoSubSets;
@@ -228,28 +229,27 @@ public class SprintServiceImpl implements SprintService {
         Sprint updated = sprintRepository.findByActiveAndProject(TRUE, project)
                 .orElseThrow(() -> new RuntimeException(NO_ACTIVE_SPRINT_IN_PROJECT));
 
-        Pair<Set<Issue>, Set<Issue>> dividedSet = splitSetIntoTwoSubSets(updated.getSprintIssues(), issue -> issue.getIssueStatus().getId().equals(DONE.getStatusID()));
+        Pair<Set<Issue>, Set<Issue>> dividedSet = splitSetIntoTwoSubSets(
+                updated.getSprintIssues(),
+                IssueStatusID::isCompleted
+        );
         Set<Issue> doneIssues = dividedSet.getKey();
         Set<Issue> uncompletedIssues = dividedSet.getValue();
 
-        doneIssues.forEach(issue -> {
-            issue.setSprint(null);
-            issueRepository.save(issue);
-        });
+        if (!uncompletedIssues.isEmpty()) {
+            IssueStatus toDoStatus = issueStatusRepository.findById(TO_DO.getStatusID()).orElseThrow();
+            uncompletedIssues.forEach(issue -> {
+                issue.setSprint(null);
+                issue.setIssueStatus(toDoStatus);
+                issueRepository.save(issue);
+            });
+        }
 
-        uncompletedIssues.forEach(issue -> {
-            issue.setSprint(null);
-            issue.setIssueStatus(issueStatusRepository.findById(TO_DO.getStatusID()).orElseThrow());
-            issueRepository.save(issue);
-        });
-
-        updated.setSprintIssues(new HashSet<>());
-        sprintRepository.save(updated);
-
+        updated.setSprintIssues(new HashSet<>(doneIssues));
         updated.setActive(FALSE);
         updated.setIsDone(TRUE);
+        updated.setEndDate(ZonedDateTime.now());
         sprintRepository.save(updated);
-        sprintRepository.deleteById(updated.getId());
     }
 
     private Pair<Boolean, String> validateSprintDatesForStart(Sprint sprint) {

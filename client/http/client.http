@@ -6,4 +6,4 @@ grant_type=password
 &client_id={{clientId}}
 &client_secret={{clientSecret}}
 &username={{username}}
-&password= {{password}}
+&password={{password}}

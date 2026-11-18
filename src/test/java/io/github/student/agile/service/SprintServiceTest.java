@@ -7,7 +7,9 @@ import io.github.student.agile.resource.domain.Issue;
 import io.github.student.agile.resource.domain.IssueStatus;
 import io.github.student.agile.resource.domain.Project;
 import io.github.student.agile.resource.domain.Sprint;
+import io.github.student.agile.resource.domain.dictionary.IssueStatusID;
 import io.github.student.agile.resource.dto.SprintDTO;
+import io.github.student.agile.resource.mapper.SprintDTOMapper;
 import io.github.student.agile.resource.repository.BacklogRepository;
 import io.github.student.agile.resource.repository.IssueRepository;
 import io.github.student.agile.resource.repository.IssueStatusRepository;
@@ -81,6 +83,9 @@ public class SprintServiceTest {
 
     @Autowired
     private IssueStatusRepository issueStatusRepository;
+
+    @Autowired
+    private SprintDTOMapper sprintDTOMapper;
 
     @MockBean
     private UserService userService;
@@ -353,8 +358,14 @@ public class SprintServiceTest {
         assertEquals(TO_DO.getStatusID(), inProgressIssue.getIssueStatus().getId());
         assertEquals(DONE.getStatusID(), doneIssue.getIssueStatus().getId());
         assertNull(inProgressIssue.getSprint());
-        assertNull(doneIssue.getSprint());
-        assertNull(sprintAfterStopOperation);
+        assertNotNull(sprintAfterStopOperation);
+        assertEquals(activeSprint.getId(), doneIssue.getSprint().getId());
+        assertEquals(Boolean.FALSE, sprintAfterStopOperation.getActive());
+        assertEquals(Boolean.TRUE, sprintAfterStopOperation.getIsDone());
+        assertNotNull(sprintAfterStopOperation.getEndDate());
+        assertEquals(1, sprintAfterStopOperation.getSprintIssues().size());
+        assertTrue(sprintAfterStopOperation.getSprintIssues().contains(doneIssue));
+        assertFalse(sprintAfterStopOperation.getSprintIssues().contains(inProgressIssue));
     }
 
     @Test
@@ -475,6 +486,105 @@ public class SprintServiceTest {
 
         //then
         assertEquals(ISSUE_DOES_NOT_EXISTS, exception.getMessage());
+    }
+
+    @Test
+    public void stopSprint_completedSprintIsExcludedFromActiveAndNonActivatedLists() {
+
+        //given
+        prepareSprintWithIssuesToStop();
+
+        //when
+        sprintService.stopSprint(defaultScrumProject.getId());
+
+        //then
+        assertNull(sprintService.getActiveSprint(defaultScrumProject.getId()));
+        assertTrue(sprintService.getAllNonActivatedSprints(defaultScrumProject.getId()).isEmpty());
+    }
+
+    @Test
+    public void sprintRepository_findsAllAndCompletedSprintsForProjectInOrder() {
+
+        //given
+        Project otherProject = createProjectEntity();
+        otherProject.setName("Other project");
+        projectRepository.save(otherProject);
+
+        ZonedDateTime baseTime = ZonedDateTime.now().minusDays(10);
+
+        Sprint completedEarlier = createSprintEntity(defaultScrumProject, Boolean.FALSE);
+        completedEarlier.setName("Sprint 1");
+        completedEarlier.setStartDate(baseTime);
+        completedEarlier.setEndDate(baseTime.plusDays(3));
+        completedEarlier.setIsDone(Boolean.TRUE);
+        sprintRepository.save(completedEarlier);
+
+        Sprint completedLater = createSprintEntity(defaultScrumProject, Boolean.FALSE);
+        completedLater.setName("Sprint 2");
+        completedLater.setStartDate(baseTime.plusDays(4));
+        completedLater.setEndDate(baseTime.plusDays(7));
+        completedLater.setIsDone(Boolean.TRUE);
+        sprintRepository.save(completedLater);
+
+        Sprint plannedSprint = createSprintEntity(defaultScrumProject, Boolean.FALSE);
+        plannedSprint.setName("Sprint 3");
+        plannedSprint.setStartDate(baseTime.plusDays(8));
+        plannedSprint.setIsDone(Boolean.FALSE);
+        sprintRepository.save(plannedSprint);
+
+        Sprint otherProjectCompletedSprint = createSprintEntity(otherProject, Boolean.FALSE);
+        otherProjectCompletedSprint.setName("Other Project Sprint");
+        otherProjectCompletedSprint.setStartDate(baseTime);
+        otherProjectCompletedSprint.setIsDone(Boolean.TRUE);
+        sprintRepository.save(otherProjectCompletedSprint);
+
+        //when
+        List<Sprint> allProjectSprints = sprintRepository.findAllByProjectIdOrderByStartDateAscIdAsc(defaultScrumProject.getId());
+        List<Sprint> completedProjectSprints = sprintRepository.findAllByProjectIdAndIsDoneTrueOrderByStartDateAscIdAsc(defaultScrumProject.getId());
+
+        //then
+        assertEquals(List.of(completedEarlier.getId(), completedLater.getId(), plannedSprint.getId()),
+                allProjectSprints.stream().map(Sprint::getId).toList());
+        assertEquals(List.of(completedEarlier.getId(), completedLater.getId()),
+                completedProjectSprints.stream().map(Sprint::getId).toList());
+    }
+
+    @Test
+    public void sprintDTOMapper_mapsEndDate() {
+
+        //given
+        ZonedDateTime endDate = ZonedDateTime.now();
+        Sprint sprint = createSprintEntity(defaultScrumProject, Boolean.FALSE);
+        sprint.setIsDone(Boolean.TRUE);
+        sprint.setEndDate(endDate);
+
+        //when
+        SprintDTO dto = sprintDTOMapper.map(sprint);
+
+        //then
+        assertEquals(endDate, dto.getEndDate());
+        assertEquals(sprint.getStartDate(), dto.getStartTime());
+        assertEquals(defaultScrumProject.getId(), dto.getProjectID());
+    }
+
+    @Test
+    public void issueStatusID_isCompletedRecognizesOnlyDoneStatus() {
+
+        //given
+        IssueStatus doneStatus = issueStatusRepository.getReferenceById(DONE.getStatusID());
+        IssueStatus inProgressStatus = issueStatusRepository.getReferenceById(IN_PROGRESS.getStatusID());
+        Issue doneIssue = createIssueEntityWithIssueStatus(doneStatus);
+        Issue inProgressIssue = createIssueEntityWithIssueStatus(inProgressStatus);
+        Issue issueWithoutStatus = createIssueEntity();
+
+        //then
+        assertTrue(IssueStatusID.isCompleted(doneStatus));
+        assertTrue(IssueStatusID.isCompleted(doneIssue));
+        assertFalse(IssueStatusID.isCompleted(inProgressStatus));
+        assertFalse(IssueStatusID.isCompleted(inProgressIssue));
+        assertFalse(IssueStatusID.isCompleted((IssueStatus) null));
+        assertFalse(IssueStatusID.isCompleted((Issue) null));
+        assertFalse(IssueStatusID.isCompleted(issueWithoutStatus));
     }
 
     private SprintWithIssues prepareSprintWithIssuesToStop() {

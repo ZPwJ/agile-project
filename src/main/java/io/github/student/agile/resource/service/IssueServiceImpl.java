@@ -45,6 +45,7 @@ import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.D
 import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.IN_PROGRESS;
 import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.IN_TESTS;
 import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.TO_DO;
+import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.isCompleted;
 import static java.util.Objects.isNull;
 import static java.util.Optional.ofNullable;
 
@@ -271,7 +272,7 @@ public class IssueServiceImpl implements IssueService{
 
     private boolean isStatusChangeFlowCorrect(IssueStatus current, IssueStatus changeRequested) {
 
-        boolean isIssueDone = DONE.getStatusID().equals(current.getId());
+        boolean isIssueDone = isCompleted(current);
         boolean isNaturalFlow = current.getId().equals(changeRequested.getId()-1);
         boolean isBackFromCodeReviewToInProgress = CODE_REVIEW.getStatusID().equals(current.getId()) && IN_PROGRESS.getStatusID().equals(changeRequested.getId());
         boolean isBackFromTestsToInProgress = IN_TESTS.getStatusID().equals(current.getId()) && IN_PROGRESS.getStatusID().equals(changeRequested.getId());

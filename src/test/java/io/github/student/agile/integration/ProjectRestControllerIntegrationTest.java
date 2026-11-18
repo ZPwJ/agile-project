@@ -7,6 +7,7 @@ import io.github.student.agile.resource.domain.Project;
 import io.github.student.agile.resource.dto.ProjectDTO;
 import io.github.student.agile.resource.dto.UserAssociationDTO;
 import io.github.student.agile.resource.dto.UserDTO;
+import io.github.student.agile.resource.dto.UserExcludingDTO;
 import io.github.student.agile.resource.mapper.ProjectDTOMapper;
 import io.github.student.agile.resource.repository.ProjectRepository;
 import io.github.student.agile.resource.service.UserService;
@@ -37,6 +38,8 @@ import static io.github.student.agile.builder.ProjectBuilder.PROJECT_GOAL;
 import static io.github.student.agile.builder.ProjectBuilder.PROJECT_NAME;
 import static io.github.student.agile.builder.UserBuilder.createCurrentLoggedInUser;
 import static io.github.student.agile.builder.UserBuilder.prepareAnotherUserMock;
+import static io.github.student.agile.exception.dictionary.ExceptionMessages.ACTION_NOT_ALLOWED;
+import static io.github.student.agile.exception.dictionary.ExceptionMessages.PROJECT_DOES_NOT_EXISTS;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
@@ -184,6 +187,71 @@ public class ProjectRestControllerIntegrationTest {
                 .andExpect(status().isOk());
 
         assertThat(project.getUserIDs()).hasSize(2).containsOnly(currentLoggedInUserUUID, anotherUser.getUuid());
+    }
+
+    @Test
+    @WithMockUser(username = "plain_user", roles = "dev")
+    public void getProjectDetails_returnsProjectWithOwnerAndMembers() throws Exception {
+
+        UserDTO currentUser = createCurrentLoggedInUser();
+        when(userService.getUserByUUID(currentUser.getUuid())).thenReturn(currentUser);
+        Project project = createDefaultProject(Set.of(currentUser.getUuid()), currentUser.getUuid());
+
+        mvc.perform(get(PROJECT_CONTROLLER_BASE_URL.concat("/{id}"), project.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.projectID", is(project.getId())))
+                .andExpect(jsonPath("$.name", is(PROJECT_NAME)))
+                .andExpect(jsonPath("$.owner.uuid", is(currentUser.getUuid())))
+                .andExpect(jsonPath("$.members", hasSize(1)));
+    }
+
+    @Test
+    @WithMockUser(username = "plain_user", roles = "dev")
+    public void getProjectDetails_notExistingProject_returns404() throws Exception {
+
+        mvc.perform(get(PROJECT_CONTROLLER_BASE_URL.concat("/{id}"), -1))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message", is(PROJECT_DOES_NOT_EXISTS)));
+    }
+
+    @Test
+    @WithMockUser(username = "scrum_master", roles = "sm")
+    public void deleteUserFromProject_removesUserFromProject() throws Exception {
+
+        UserDTO anotherUser = prepareAnotherUserMock();
+        when(userService.isProjectOwner(any())).thenReturn(Boolean.TRUE);
+        when(userService.getUserByUUID(anotherUser.getUuid())).thenReturn(anotherUser);
+        String currentLoggedInUserUUID = createCurrentLoggedInUser().getUuid();
+        Project project = createDefaultProject(Set.of(currentLoggedInUserUUID, anotherUser.getUuid()), currentLoggedInUserUUID);
+
+        mvc.perform(delete(PROJECT_CONTROLLER_BASE_URL.concat("/delete-user"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(exclusionRequest(anotherUser.getUuid(), project.getId()))))
+                .andExpect(status().isOk());
+
+        assertThat(project.getUserIDs()).containsOnly(currentLoggedInUserUUID);
+    }
+
+    @Test
+    @WithMockUser(username = "scrum_master", roles = "sm")
+    public void deleteUserFromProject_notProjectOwner_returns403() throws Exception {
+
+        when(userService.isProjectOwner(any())).thenReturn(Boolean.FALSE);
+        String currentLoggedInUserUUID = createCurrentLoggedInUser().getUuid();
+        Project project = createDefaultProject(Set.of(currentLoggedInUserUUID), currentLoggedInUserUUID);
+
+        mvc.perform(delete(PROJECT_CONTROLLER_BASE_URL.concat("/delete-user"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(exclusionRequest(currentLoggedInUserUUID, project.getId()))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message", is(ACTION_NOT_ALLOWED)));
+    }
+
+    private UserExcludingDTO exclusionRequest(String userUUID, Integer projectID) {
+        UserExcludingDTO request = new UserExcludingDTO();
+        request.setUserUUID(userUUID);
+        request.setProjectID(projectID);
+        return request;
     }
 
     private ProjectDTO createDefaultProjectCreationBody() {

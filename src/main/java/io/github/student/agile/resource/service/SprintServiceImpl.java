@@ -4,6 +4,9 @@ import io.github.student.agile.exception.definition.NullIdentifierException;
 import io.github.student.agile.resource.domain.Issue;
 import io.github.student.agile.resource.domain.Project;
 import io.github.student.agile.resource.domain.Sprint;
+import io.github.student.agile.resource.domain.SprintIssueSnapshot;
+import io.github.student.agile.resource.repository.SprintIssueSnapshotRepository;
+import java.util.stream.Stream;
 import io.github.student.agile.resource.dto.SprintDTO;
 import io.github.student.agile.resource.mapper.SprintDTOMapper;
 import io.github.student.agile.resource.repository.IssueRepository;
@@ -25,6 +28,7 @@ import java.util.stream.Collectors;
 
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.ACTIVE_SPRINT_EXISTS;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.EMPTY_SPRINT;
+import static io.github.student.agile.exception.dictionary.ExceptionMessages.FINISHED_SPRINT_CANNOT_BE_DELETED;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.ISSUE_ALREADY_HAS_SPRINT;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.ISSUE_DOES_NOT_EXISTS;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.NO_ACTIVE_SPRINT_IN_PROJECT;
@@ -55,6 +59,7 @@ public class SprintServiceImpl implements SprintService {
     private final ProjectRepository projectRepository;
     private final IssueStatusRepository issueStatusRepository;
     private final SprintDTOMapper sprintDTOMapper;
+    private final SprintIssueSnapshotRepository snapshotRepository;
 
     @Override
     public SprintDTO getActiveSprint(Integer projectID) {
@@ -142,6 +147,10 @@ public class SprintServiceImpl implements SprintService {
 
         Sprint sprintToBeDeleted = sprintRepository.findById(sprintID)
                 .orElseThrow(() -> new RuntimeException(SPRINT_DOES_NOT_EXISTS));
+
+        if (TRUE.equals(sprintToBeDeleted.getIsDone())) {
+            throw new RuntimeException(FINISHED_SPRINT_CANNOT_BE_DELETED);
+        }
 
         if (!sprintToBeDeleted.getSprintIssues().isEmpty()) {
             List<Issue> issues = issueRepository.findAllBySprint(sprintToBeDeleted)
@@ -239,6 +248,12 @@ public class SprintServiceImpl implements SprintService {
         Set<Issue> doneIssues = dividedSet.getKey();
         Set<Issue> uncompletedIssues = dividedSet.getValue();
 
+        // Freeze the sprint's result BEFORE issues are detached/reset: reports read these rows, not live issues.
+        snapshotRepository.saveAll(Stream.concat(
+                doneIssues.stream().map(issue -> toSnapshot(updated, issue, TRUE)),
+                uncompletedIssues.stream().map(issue -> toSnapshot(updated, issue, FALSE))
+        ).toList());
+
         doneIssues.forEach(issue -> {
             issue.setSprint(null);
             issueRepository.save(issue);
@@ -258,8 +273,18 @@ public class SprintServiceImpl implements SprintService {
         if (isNull(updated.getEndDate())) {
             updated.setEndDate(ZonedDateTime.now());
         }
+        // The sprint row is kept (isDone = true) so finished sprints stay available for reports.
         sprintRepository.save(updated);
-        sprintRepository.deleteById(updated.getId());
+    }
+
+    private SprintIssueSnapshot toSnapshot(Sprint sprint, Issue issue, Boolean completed) {
+        return SprintIssueSnapshot.builder()
+                .sprint(sprint)
+                .issueId(issue.getId())
+                .estimation(issue.getEstimation())
+                .finalStatus(issue.getIssueStatus())
+                .completed(completed)
+                .build();
     }
 
     private void validateEndDateNotBeforeStartDate(ZonedDateTime start, ZonedDateTime end) {

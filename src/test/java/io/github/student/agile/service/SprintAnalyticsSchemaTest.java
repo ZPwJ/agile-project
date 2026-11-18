@@ -9,6 +9,8 @@ import io.github.student.agile.resource.domain.Issue;
 import io.github.student.agile.resource.domain.IssueStatusHistory;
 import io.github.student.agile.resource.domain.Project;
 import io.github.student.agile.resource.domain.Sprint;
+import io.github.student.agile.resource.domain.SprintIssueSnapshot;
+import io.github.student.agile.resource.repository.SprintIssueSnapshotRepository;
 import io.github.student.agile.resource.domain.dictionary.IssueStatusID;
 import io.github.student.agile.resource.dto.SprintDTO;
 import io.github.student.agile.resource.repository.BacklogRepository;
@@ -30,6 +32,7 @@ import java.util.List;
 
 import static io.github.student.agile.builder.IssueBuilder.createIssueEntityWithSprint;
 import static io.github.student.agile.builder.ProjectBuilder.createProjectEntity;
+import static io.github.student.agile.exception.dictionary.ExceptionMessages.FINISHED_SPRINT_CANNOT_BE_DELETED;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.NEGATIVE_ESTIMATION;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.SPRINT_END_DATE_BEFORE_START_DATE;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -54,6 +57,8 @@ public class SprintAnalyticsSchemaTest {
     private IssueStatusRepository issueStatusRepository;
     @Autowired
     private IssueStatusHistoryRepository historyRepository;
+    @Autowired
+    private SprintIssueSnapshotRepository snapshotRepository;
     @Autowired
     private IssueService issueService;
     @Autowired
@@ -131,6 +136,48 @@ public class SprintAnalyticsSchemaTest {
         RuntimeException ex = assertThrows(RuntimeException.class, () -> sprintService.createSprint(dto));
 
         assertEquals(SPRINT_END_DATE_BEFORE_START_DATE, ex.getMessage());
+    }
+
+    @Test
+    public void stopSprint_snapshotsDoneAndUndoneIssuesWithEstimations() {
+        Sprint sprint = SprintBuilder.createSprintEntity(project, Boolean.TRUE);
+        sprint.setSprintIssues(new java.util.HashSet<>());
+        sprint = sprintRepository.save(sprint);
+
+        Issue done = createIssueEntityWithSprint(sprint);
+        done.setEstimation(5);
+        done.setIssueStatus(issueStatusRepository.findById(IssueStatusID.DONE.getStatusID()).orElseThrow());
+        Issue open = createIssueEntityWithSprint(sprint);
+        open.setEstimation(null);
+        open.setIssueStatus(issueStatusRepository.findById(IssueStatusID.IN_PROGRESS.getStatusID()).orElseThrow());
+        issueRepository.saveAll(List.of(done, open));
+        sprint.getSprintIssues().addAll(List.of(done, open));
+        sprintRepository.save(sprint);
+
+        sprintService.stopSprint(project.getId());
+
+        List<SprintIssueSnapshot> rows = snapshotRepository.findAllBySprintId(sprint.getId());
+        assertEquals(2, rows.size());
+        SprintIssueSnapshot doneRow = rows.stream().filter(r -> r.getIssueId().equals(done.getId())).findFirst().orElseThrow();
+        SprintIssueSnapshot openRow = rows.stream().filter(r -> r.getIssueId().equals(open.getId())).findFirst().orElseThrow();
+        assertEquals(5, doneRow.getEstimation());
+        assertEquals(true, doneRow.getCompleted());
+        assertNull(openRow.getEstimation());
+        assertEquals(false, openRow.getCompleted());
+        // status is captured before the unfinished issue is reset to TO_DO
+        assertEquals(IssueStatusID.IN_PROGRESS.getStatusID(), openRow.getFinalStatus().getId());
+        assertEquals(IssueStatusID.TO_DO.getStatusID(), open.getIssueStatus().getId());
+    }
+
+    @Test
+    public void deleteSprint_finishedSprintIsRejected() {
+        Sprint sprint = SprintBuilder.createSprintEntity(project, Boolean.FALSE);
+        sprint.setIsDone(Boolean.TRUE);
+        Sprint saved = sprintRepository.save(sprint);
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> sprintService.deleteSprint(saved.getId()));
+
+        assertEquals(FINISHED_SPRINT_CANNOT_BE_DELETED, ex.getMessage());
     }
 
     @Test

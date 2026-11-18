@@ -354,7 +354,11 @@ public class SprintServiceTest {
         assertEquals(DONE.getStatusID(), doneIssue.getIssueStatus().getId());
         assertNull(inProgressIssue.getSprint());
         assertNull(doneIssue.getSprint());
-        assertNull(sprintAfterStopOperation);
+        // the sprint is kept (finished) so that reports can read it
+        assertNotNull(sprintAfterStopOperation);
+        assertTrue(sprintAfterStopOperation.getIsDone());
+        assertFalse(sprintAfterStopOperation.getActive());
+        assertNotNull(sprintAfterStopOperation.getEndDate());
     }
 
     @Test

@@ -7,13 +7,16 @@ import io.github.student.agile.resource.domain.Issue;
 import io.github.student.agile.resource.domain.IssueStatus;
 import io.github.student.agile.resource.domain.Project;
 import io.github.student.agile.resource.domain.Sprint;
+import io.github.student.agile.resource.domain.SprintIssueEvent;
 import io.github.student.agile.resource.domain.dictionary.IssueStatusID;
+import io.github.student.agile.resource.domain.dictionary.SprintEventType;
 import io.github.student.agile.resource.dto.SprintDTO;
 import io.github.student.agile.resource.mapper.SprintDTOMapper;
 import io.github.student.agile.resource.repository.BacklogRepository;
 import io.github.student.agile.resource.repository.IssueRepository;
 import io.github.student.agile.resource.repository.IssueStatusRepository;
 import io.github.student.agile.resource.repository.ProjectRepository;
+import io.github.student.agile.resource.repository.SprintIssueEventRepository;
 import io.github.student.agile.resource.repository.SprintRepository;
 import io.github.student.agile.resource.service.SprintService;
 import io.github.student.agile.resource.service.UserService;
@@ -86,6 +89,9 @@ public class SprintServiceTest {
 
     @Autowired
     private SprintDTOMapper sprintDTOMapper;
+
+    @Autowired
+    private SprintIssueEventRepository sprintIssueEventRepository;
 
     @MockBean
     private UserService userService;
@@ -585,6 +591,95 @@ public class SprintServiceTest {
         assertFalse(IssueStatusID.isCompleted((IssueStatus) null));
         assertFalse(IssueStatusID.isCompleted((Issue) null));
         assertFalse(IssueStatusID.isCompleted(issueWithoutStatus));
+    }
+
+    @Test
+    public void startSprint_recordsInitialIssuesAndEstimationsAsSprintStartedEvents() {
+
+        //given
+        IssueStatus toDoStatus = issueStatusRepository.getReferenceById(TO_DO.getStatusID());
+        Sprint sprint = sprintRepository.save(createSprintEntity(defaultScrumProject, Boolean.FALSE));
+
+        Issue estimatedIssue = createIssueEntityWithIssueStatus(toDoStatus);
+        estimatedIssue.setEstimation(5);
+        estimatedIssue.setSprint(sprint);
+        issueRepository.save(estimatedIssue);
+
+        Issue unestimatedIssue = createIssueEntityWithIssueStatus(toDoStatus);
+        unestimatedIssue.setEstimation(null);
+        unestimatedIssue.setSprint(sprint);
+        issueRepository.save(unestimatedIssue);
+
+        sprint.setSprintIssues(new HashSet<>(Set.of(estimatedIssue, unestimatedIssue)));
+        sprintRepository.save(sprint);
+
+        //when
+        sprintService.startSprint(sprint.getId());
+        List<SprintIssueEvent> events = sprintIssueEventRepository
+                .findAllBySprintIdAndEventTypeOrderByOccurredAtAscIdAsc(sprint.getId(), SprintEventType.SPRINT_STARTED);
+
+        //then
+        assertEquals(2, events.size());
+        SprintIssueEvent firstEvent = events.stream()
+                .filter(e -> estimatedIssue.getId().equals(e.getIssueId()))
+                .findFirst()
+                .orElseThrow();
+        SprintIssueEvent secondEvent = events.stream()
+                .filter(e -> unestimatedIssue.getId().equals(e.getIssueId()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(5, firstEvent.getEstimation());
+        assertEquals(TO_DO.getStatusID(), firstEvent.getStatusId());
+        assertNotNull(firstEvent.getOccurredAt());
+        assertNull(secondEvent.getEstimation());
+        assertEquals(TO_DO.getStatusID(), secondEvent.getStatusId());
+    }
+
+    @Test
+    public void sprintScopeChanges_recordEventsOnlyWhileSprintIsActiveAndPreserveChronology() {
+
+        //given
+        IssueStatus toDoStatus = issueStatusRepository.getReferenceById(TO_DO.getStatusID());
+        Sprint sprint = sprintRepository.save(createSprintEntity(defaultScrumProject, Boolean.FALSE));
+
+        Issue initialIssue = createIssueEntityWithIssueStatus(toDoStatus);
+        initialIssue.setEstimation(3);
+        issueRepository.save(initialIssue);
+
+        Issue addedDuringSprint = createIssueEntityWithIssueStatus(toDoStatus);
+        addedDuringSprint.setEstimation(8);
+        issueRepository.save(addedDuringSprint);
+
+        //when: planning before start does not create scope events
+        sprintService.addIssueToSprint(initialIssue.getId(), sprint.getId());
+        assertTrue(sprintIssueEventRepository.findAllBySprintIdOrderByOccurredAtAscIdAsc(sprint.getId()).isEmpty());
+
+        //when: start, add, remove, stop
+        sprintService.startSprint(sprint.getId());
+        sprintService.addIssueToSprint(addedDuringSprint.getId(), sprint.getId());
+        sprintService.deleteIssueFromSprint(sprint.getId(), initialIssue.getId());
+        sprintService.stopSprint(defaultScrumProject.getId());
+
+        List<SprintIssueEvent> timeline = sprintIssueEventRepository.findAllBySprintIdOrderByOccurredAtAscIdAsc(sprint.getId());
+        Sprint stoppedSprint = sprintRepository.findById(sprint.getId()).orElseThrow();
+
+        //then
+        assertEquals(
+                List.of(
+                        SprintEventType.SPRINT_STARTED,
+                        SprintEventType.ADDED_TO_SPRINT,
+                        SprintEventType.REMOVED_FROM_SPRINT,
+                        SprintEventType.SPRINT_STOPPED
+                ),
+                timeline.stream().map(SprintIssueEvent::getEventType).toList()
+        );
+        assertEquals(initialIssue.getId(), timeline.get(0).getIssueId());
+        assertEquals(addedDuringSprint.getId(), timeline.get(1).getIssueId());
+        assertEquals(8, timeline.get(1).getEstimation());
+        assertEquals(initialIssue.getId(), timeline.get(2).getIssueId());
+        assertEquals(3, timeline.get(2).getEstimation());
+        assertNull(timeline.get(3).getIssueId());
+        assertEquals(stoppedSprint.getEndDate(), timeline.get(3).getOccurredAt());
     }
 
     private SprintWithIssues prepareSprintWithIssuesToStop() {

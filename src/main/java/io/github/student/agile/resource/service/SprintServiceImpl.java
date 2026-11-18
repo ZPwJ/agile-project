@@ -55,6 +55,7 @@ public class SprintServiceImpl implements SprintService {
     private final ProjectRepository projectRepository;
     private final IssueStatusRepository issueStatusRepository;
     private final SprintDTOMapper sprintDTOMapper;
+    private final SprintEventService sprintEventService;
 
     @Override
     public SprintDTO getActiveSprint(Integer projectID) {
@@ -148,6 +149,7 @@ public class SprintServiceImpl implements SprintService {
         sprintToBeDeleted.setSprintIssues(new HashSet<>());
         sprintRepository.save(sprintToBeDeleted);
 
+        sprintEventService.deleteEventsForSprint(sprintID);
         sprintRepository.deleteById(sprintID);
     }
 
@@ -174,6 +176,7 @@ public class SprintServiceImpl implements SprintService {
 
         issue.setSprint(sprint);
         issueRepository.save(issue);
+        sprintEventService.recordIssueAddedToSprint(sprint, issue);
     }
 
     @Override
@@ -185,12 +188,17 @@ public class SprintServiceImpl implements SprintService {
                 .orElseThrow(() -> new RuntimeException(ISSUE_DOES_NOT_EXISTS));
 
         Set<Issue> sprintIssues = sprint.getSprintIssues();
-        sprintIssues.remove(issue);
+        boolean removedFromSet = sprintIssues != null && sprintIssues.remove(issue);
+        boolean belongedToSprint = removedFromSet || (issue.getSprint() != null && sprint.getId().equals(issue.getSprint().getId()));
         sprint.setSprintIssues(sprintIssues);
         sprintRepository.save(sprint);
 
         issue.setSprint(null);
         issueRepository.save(issue);
+
+        if (belongedToSprint) {
+            sprintEventService.recordIssueRemovedFromSprint(sprint, issue);
+        }
     }
 
     @Override
@@ -212,12 +220,14 @@ public class SprintServiceImpl implements SprintService {
             throw new RuntimeException(validationResult.getValue());
         }
 
+        ZonedDateTime startedAt = ZonedDateTime.now();
         if (isNull(updated.getStartDate())) {
-            updated.setStartDate(ZonedDateTime.now());
+            updated.setStartDate(startedAt);
         }
 
         updated.setActive(TRUE);
         sprintRepository.save(updated);
+        sprintEventService.recordSprintStarted(updated, startedAt);
     }
 
     @Override
@@ -245,11 +255,13 @@ public class SprintServiceImpl implements SprintService {
             });
         }
 
+        ZonedDateTime endDate = ZonedDateTime.now();
         updated.setSprintIssues(new HashSet<>(doneIssues));
         updated.setActive(FALSE);
         updated.setIsDone(TRUE);
-        updated.setEndDate(ZonedDateTime.now());
+        updated.setEndDate(endDate);
         sprintRepository.save(updated);
+        sprintEventService.recordSprintStopped(updated, endDate);
     }
 
     private Pair<Boolean, String> validateSprintDatesForStart(Sprint sprint) {

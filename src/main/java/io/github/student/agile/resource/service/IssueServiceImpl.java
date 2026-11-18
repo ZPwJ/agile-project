@@ -64,6 +64,7 @@ public class IssueServiceImpl implements IssueService{
     private final UserService userService;
     private final IssueDTOMapper issueDTOMapper;
     private final IssueGeneralDTOMapper issueGeneralDTOMapper;
+    private final SprintEventService sprintEventService;
 
     @Override
     public IssueDTO createIssue(IssueMRO issueDTO) {
@@ -125,11 +126,13 @@ public class IssueServiceImpl implements IssueService{
                     .orElseThrow(() -> new RuntimeException(ISSUE_PRIORITY_DOES_NOT_EXISTS));
         }
 
+        Integer previousEstimation = updated.getEstimation();
         updated.setName(ofNullable(issueDTO.getName()).orElseThrow());
         updated.setDescription(ofNullable(issueDTO.getDescription()).orElseThrow());
         updated.setEstimation(issueDTO.getEstimation());
         updated.setIssuePriority(isNull(priority) ? null : priority);
         issueRepository.save(updated);
+        sprintEventService.recordEstimationChanged(updated, previousEstimation, updated.getEstimation());
         return issueDTOMapper.map(updated);
     }
 
@@ -268,6 +271,7 @@ public class IssueServiceImpl implements IssueService{
         }
         updated.setIssueStatus(newStatus);
         issueRepository.save(updated);
+        sprintEventService.recordStatusChanged(updated, currentStatus, newStatus);
     }
 
     private boolean isStatusChangeFlowCorrect(IssueStatus current, IssueStatus changeRequested) {

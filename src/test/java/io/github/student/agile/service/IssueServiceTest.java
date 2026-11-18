@@ -10,8 +10,10 @@ import io.github.student.agile.resource.domain.Issue;
 import io.github.student.agile.resource.domain.IssueStatus;
 import io.github.student.agile.resource.domain.Project;
 import io.github.student.agile.resource.domain.Sprint;
+import io.github.student.agile.resource.domain.SprintIssueEvent;
 import io.github.student.agile.resource.domain.dictionary.IssuePriorityID;
 import io.github.student.agile.resource.domain.dictionary.IssueStatusID;
+import io.github.student.agile.resource.domain.dictionary.SprintEventType;
 import io.github.student.agile.resource.dto.CommentDTO;
 import io.github.student.agile.resource.dto.IssueDTO;
 import io.github.student.agile.resource.dto.IssueGeneralDTO;
@@ -21,6 +23,7 @@ import io.github.student.agile.resource.repository.CommentRepository;
 import io.github.student.agile.resource.repository.IssueRepository;
 import io.github.student.agile.resource.repository.IssueStatusRepository;
 import io.github.student.agile.resource.repository.ProjectRepository;
+import io.github.student.agile.resource.repository.SprintIssueEventRepository;
 import io.github.student.agile.resource.repository.SprintRepository;
 import io.github.student.agile.resource.service.IssueService;
 import io.github.student.agile.resource.service.UserService;
@@ -94,6 +97,9 @@ public class IssueServiceTest {
 
     @Autowired
     private CommentRepository commentRepository;
+
+    @Autowired
+    private SprintIssueEventRepository sprintIssueEventRepository;
 
     @MockBean
     private UserService userService;
@@ -688,6 +694,124 @@ public class IssueServiceTest {
 
         //then
         assertArrayEquals(emptyList.toArray(), returnedList.toArray());
+    }
+
+    @Test
+    public void changeIssueStatus_recordsStatusChangedEventAndDoesNotRecordOnValidationFailure() {
+
+        //given
+        Sprint sprint = sprintRepository.save(SprintBuilder.createSprintEntity(defaultScrumProject, Boolean.TRUE));
+        Issue issue = createIssueEntityWithSprint(sprint);
+        issue.setEstimation(5);
+        issue.setIssueStatus(issueStatusRepository.findById(IssueStatusID.TO_DO.getStatusID()).orElse(null));
+        issueRepository.save(issue);
+
+        //when: valid status transition
+        issueService.changeIssueStatus(issue.getId(), IssueStatusID.IN_PROGRESS.getStatusID());
+        //and: invalid transition (IN_PROGRESS -> DONE directly)
+        assertThrows(RuntimeException.class, () ->
+                issueService.changeIssueStatus(issue.getId(), IssueStatusID.DONE.getStatusID()));
+
+        List<SprintIssueEvent> events = sprintIssueEventRepository.findAllBySprintIdOrderByOccurredAtAscIdAsc(sprint.getId());
+
+        //then
+        assertEquals(1, events.size());
+        SprintIssueEvent event = events.get(0);
+        assertEquals(SprintEventType.STATUS_CHANGED, event.getEventType());
+        assertEquals(issue.getId(), event.getIssueId());
+        assertEquals(IssueStatusID.TO_DO.getStatusID(), event.getPreviousStatusId());
+        assertEquals(IssueStatusID.IN_PROGRESS.getStatusID(), event.getStatusId());
+        assertEquals(5, event.getEstimation());
+    }
+
+    @Test
+    public void updateIssue_recordsEstimationChangedOnlyWhenEstimationChangesInActiveSprint() {
+
+        //given
+        Sprint activeSprint = sprintRepository.save(SprintBuilder.createSprintEntity(defaultScrumProject, Boolean.TRUE));
+        Issue issue = createIssueEntityWithSprint(activeSprint);
+        issue.setIssueStatus(issueStatusRepository.findById(IssueStatusID.TO_DO.getStatusID()).orElse(null));
+        issue.setEstimation(3);
+        issueRepository.save(issue);
+
+        //when: change name/description without changing estimation -> no event
+        issueService.updateIssue(IssueMRO.builder()
+                .issueID(issue.getId())
+                .name("Updated name")
+                .description("Updated description")
+                .estimation(3)
+                .build());
+
+        //when: change estimation 3 -> 8 -> null -> event recorded twice
+        issueService.updateIssue(IssueMRO.builder()
+                .issueID(issue.getId())
+                .name("Updated name")
+                .description("Updated description")
+                .estimation(8)
+                .build());
+        issueService.updateIssue(IssueMRO.builder()
+                .issueID(issue.getId())
+                .name("Updated name")
+                .description("Updated description")
+                .estimation(null)
+                .build());
+
+        List<SprintIssueEvent> events = sprintIssueEventRepository.findAllBySprintIdOrderByOccurredAtAscIdAsc(activeSprint.getId());
+
+        //then
+        assertEquals(2, events.size());
+        assertEquals(SprintEventType.ESTIMATION_CHANGED, events.get(0).getEventType());
+        assertEquals(3, events.get(0).getPreviousEstimation());
+        assertEquals(8, events.get(0).getEstimation());
+
+        assertEquals(SprintEventType.ESTIMATION_CHANGED, events.get(1).getEventType());
+        assertEquals(8, events.get(1).getPreviousEstimation());
+        assertNull(events.get(1).getEstimation());
+    }
+
+    @Test
+    public void updateIssue_doesNotRecordEstimationChangedWhenSprintIsNotActive() {
+
+        //given
+        Sprint plannedSprint = sprintRepository.save(SprintBuilder.createSprintEntity(defaultScrumProject, Boolean.FALSE));
+        Issue issue = createIssueEntityWithSprint(plannedSprint);
+        issue.setEstimation(3);
+        issueRepository.save(issue);
+
+        //when
+        issueService.updateIssue(IssueMRO.builder()
+                .issueID(issue.getId())
+                .name("Updated")
+                .description("Updated")
+                .estimation(13)
+                .build());
+
+        //then
+        assertEquals(0, sprintIssueEventRepository.findAllBySprintIdOrderByOccurredAtAscIdAsc(plannedSprint.getId()).size());
+    }
+
+    @Test
+    public void deleteIssue_succeedsWhenIssueHasSprintEventHistory() {
+
+        //given
+        Sprint activeSprint = sprintRepository.save(SprintBuilder.createSprintEntity(defaultScrumProject, Boolean.TRUE));
+        Issue issue = createIssueEntityWithSprint(activeSprint);
+        issue.setProjectID(defaultScrumProject.getId());
+        issue.setIssueStatus(issueStatusRepository.findById(IssueStatusID.TO_DO.getStatusID()).orElse(null));
+        issueRepository.save(issue);
+
+        Backlog backlog = defaultScrumProject.getBacklog();
+        backlog.getIssues().add(issue);
+        backlogRepository.save(backlog);
+
+        issueService.changeIssueStatus(issue.getId(), IssueStatusID.IN_PROGRESS.getStatusID());
+
+        //when
+        issueService.deleteIssue(issue.getId());
+
+        //then
+        assertNull(issueRepository.findById(issue.getId()).orElse(null));
+        assertEquals(1, sprintIssueEventRepository.findAllBySprintIdOrderByOccurredAtAscIdAsc(activeSprint.getId()).size());
     }
 
     private Issue prepareIssueWithComments() {

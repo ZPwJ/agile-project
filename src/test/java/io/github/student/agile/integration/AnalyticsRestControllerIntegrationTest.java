@@ -23,6 +23,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -44,14 +45,17 @@ import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.I
 import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.TO_DO;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.hamcrest.Matchers.endsWith;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.matchesPattern;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
+import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -64,6 +68,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 public class AnalyticsRestControllerIntegrationTest {
 
     private static final String ANALYTICS_BASE_URL = "/api/analytics";
+    private static final String CSV_HEADER =
+            "sprintID,sprintName,startedAt,endedAt,historyAvailable,completedIssueCount,uncompletedIssueCount,velocity\r\n";
 
     @Autowired
     private MockMvc mvc;
@@ -345,6 +351,89 @@ public class AnalyticsRestControllerIntegrationTest {
                     .andExpect(jsonPath("$.status", is(400)))
                     .andExpect(jsonPath("$.message", is("Invalid value '%s' for parameter '%s'".formatted(invalid[1], invalid[0]))));
         }
+    }
+
+    @Test
+    public void exportProjectSprints_returnsCsvFileWithFilteredSprints() throws Exception {
+
+        finishedSprint("September", "2026-09-01T09:00:00+02:00", "2026-09-14T17:00:00+02:00");
+        Sprint october = finishedSprint("October, part 1", "2026-10-01T09:00:00+02:00", "2026-10-14T17:00:00+02:00");
+        Sprint turnOfMonth = finishedSprint("Turn of month", "2026-10-28T09:00:00+01:00", "2026-11-10T17:00:00+01:00");
+
+        mvc.perform(get(ANALYTICS_BASE_URL + "/projects/{id}/sprints/export.csv", project.getId())
+                        .param("from", "2026-10-14")
+                        .param("to", "2026-10-28"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType("text/csv;charset=UTF-8"))
+                .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"project-%d-sprints.csv\"".formatted(project.getId())))
+                .andExpect(content().string(CSV_HEADER
+                        + october.getId() + ",\"October, part 1\",2026-10-01T07:00:00Z,2026-10-14T15:00:00Z,true,0,0,0\r\n"
+                        + turnOfMonth.getId() + ",Turn of month,2026-10-28T08:00:00Z,2026-11-10T16:00:00Z,true,0,0,0\r\n"));
+    }
+
+    @Test
+    public void exportProjectSprints_hasSameMetricsAsComparison() throws Exception {
+
+        Sprint sprint = startedSprintWithIssue(5);
+        Issue done = sprint.getSprintIssues().iterator().next();
+        for (IssueStatusID status : new IssueStatusID[]{IN_PROGRESS, CODE_REVIEW, IN_TESTS, DONE}) {
+            issueService.changeIssueStatus(done.getId(), status.getStatusID());
+        }
+        sprintService.stopSprint(project.getId());
+
+        mvc.perform(get(ANALYTICS_BASE_URL + "/projects/{id}/sprints/export.csv", project.getId()))
+                .andExpect(status().isOk())
+                .andExpect(content().string(startsWith(CSV_HEADER + sprint.getId() + "," + SPRINT_NAME + ",")))
+                .andExpect(content().string(endsWith(",true,1,0,5\r\n")));
+    }
+
+    @Test
+    public void exportProjectSprints_projectWithoutFinishedSprints_returnsHeaderOnly() throws Exception {
+
+        startedSprintWithIssue(5);
+
+        mvc.perform(get(ANALYTICS_BASE_URL + "/projects/{id}/sprints/export.csv", project.getId()))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType("text/csv;charset=UTF-8"))
+                .andExpect(content().string(CSV_HEADER));
+    }
+
+    @Test
+    public void exportProjectSprints_notExistingProject_returns404() throws Exception {
+
+        mvc.perform(get(ANALYTICS_BASE_URL + "/projects/{id}/sprints/export.csv", -1))
+                .andExpect(status().isNotFound())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.message", is(PROJECT_DOES_NOT_EXISTS)))
+                .andExpect(jsonPath("$.path", is(ANALYTICS_BASE_URL + "/projects/-1/sprints/export.csv")));
+    }
+
+    @Test
+    public void exportProjectSprints_errorWhenClientAcceptsOnlyCsv_returnsJsonError() throws Exception {
+
+        mvc.perform(get(ANALYTICS_BASE_URL + "/projects/{id}/sprints/export.csv", -1).accept("text/csv"))
+                .andExpect(status().isNotFound())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.message", is(PROJECT_DOES_NOT_EXISTS)));
+    }
+
+    @Test
+    public void exportProjectSprints_fromLaterThanTo_returns400() throws Exception {
+
+        mvc.perform(get(ANALYTICS_BASE_URL + "/projects/{id}/sprints/export.csv", project.getId())
+                        .param("from", "2026-11-16")
+                        .param("to", "2026-11-15"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message", is(INVALID_DATE_RANGE)));
+    }
+
+    @Test
+    public void exportProjectSprints_invalidDate_returns400() throws Exception {
+
+        mvc.perform(get(ANALYTICS_BASE_URL + "/projects/{id}/sprints/export.csv", project.getId()).param("from", "2026-13-01"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message", is("Invalid value '2026-13-01' for parameter 'from'")));
     }
 
     private Sprint finishedSprint(String name, String startedAt, String endedAt) {

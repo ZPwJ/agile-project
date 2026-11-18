@@ -10,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.TypeMismatchException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
@@ -88,6 +89,7 @@ public class ApiExceptionHandler {
         HttpStatus resolved = HttpStatus.resolve(status.value());
         String reason = resolved == null ? String.valueOf(status.value()) : resolved.getReasonPhrase();
         ApiErrorDTO body = new ApiErrorDTO(Instant.now(), status.value(), reason, message, request.getRequestURI());
-        return ResponseEntity.status(status).body(body);
+        // Without an explicit type an error of the CSV export requested with "Accept: text/csv" ends with 500.
+        return ResponseEntity.status(status).contentType(MediaType.APPLICATION_JSON).body(body);
     }
 }

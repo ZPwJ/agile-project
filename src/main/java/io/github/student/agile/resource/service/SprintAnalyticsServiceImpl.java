@@ -14,6 +14,7 @@ import io.github.student.agile.resource.dto.SprintSummaryReportDTO;
 import io.github.student.agile.resource.repository.IssueRepository;
 import io.github.student.agile.resource.repository.SprintIssueEventRepository;
 import io.github.student.agile.resource.repository.SprintRepository;
+import io.github.student.agile.utils.SprintComparisonCsvExporter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -160,6 +161,12 @@ public class SprintAnalyticsServiceImpl implements SprintAnalyticsService {
                         eventsBySprintId.getOrDefault(sprint.getId(), Collections.emptyList())
                 ))
                 .toList();
+    }
+
+    @Override
+    public byte[] exportProjectSprintsComparisonCsv(Integer projectId, ZonedDateTime from, ZonedDateTime to) {
+        List<SprintComparisonItemDTO> items = getProjectSprintsComparison(projectId, from, to);
+        return SprintComparisonCsvExporter.toCsvBytes(items);
     }
 
     private SprintComparisonItemDTO toComparisonItem(

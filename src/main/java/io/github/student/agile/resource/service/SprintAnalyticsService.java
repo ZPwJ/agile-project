@@ -18,4 +18,10 @@ public interface SprintAnalyticsService {
     default List<SprintComparisonItemDTO> getProjectSprintsComparison(Integer projectId) {
         return getProjectSprintsComparison(projectId, null, null);
     }
+
+    byte[] exportProjectSprintsComparisonCsv(Integer projectId, ZonedDateTime from, ZonedDateTime to);
+
+    default byte[] exportProjectSprintsComparisonCsv(Integer projectId) {
+        return exportProjectSprintsComparisonCsv(projectId, null, null);
+    }
 }

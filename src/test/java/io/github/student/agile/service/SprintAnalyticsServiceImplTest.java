@@ -26,6 +26,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
@@ -772,6 +773,56 @@ public class SprintAnalyticsServiceImplTest {
         );
 
         assertEquals(INVALID_DATE_RANGE, exception.getMessage());
+        verifyNoInteractions(sprintRepository, userService, issueRepository, sprintIssueEventRepository);
+    }
+
+    @Test
+    public void exportProjectSprintsComparisonCsv_respectsRangeFilterAndFormatsCsv() {
+        List<Sprint> sprints = List.of(
+                rangeSprint(1, 10, RANGE_BASE, RANGE_BASE.plusDays(4), false, true),
+                rangeSprint(2, 10, RANGE_BASE.plusDays(5), RANGE_BASE.plusDays(9), false, true)
+        );
+        Issue doneIssue = Issue.builder()
+                .id(11)
+                .sprint(sprints.get(0))
+                .issueStatus(new IssueStatus(IssueStatusID.DONE.getStatusID(), null))
+                .estimation(8)
+                .build();
+
+        when(sprintRepository.findAllByProjectIdOrderByStartDateAscIdAsc(10)).thenReturn(sprints);
+        when(issueRepository.findAllBySprintIdIn(List.of(1))).thenReturn(List.of(doneIssue));
+        when(sprintIssueEventRepository.findAllBySprintIdInOrderByOccurredAtAscIdAsc(List.of(1)))
+                .thenReturn(Collections.emptyList());
+
+        byte[] csvBytes = sprintAnalyticsService.exportProjectSprintsComparisonCsv(10, RANGE_BASE, RANGE_BASE.plusDays(2));
+        String csv = new String(csvBytes, StandardCharsets.UTF_8);
+
+        String expected = "projectId,sprintId,sprintName,startDate,endDate,completedIssueCount,uncompletedIssueCount,velocity\r\n"
+                + "10,1,Sprint 1,2026-11-01T09:00:00Z,2026-11-05T09:00:00Z,1,0,8\r\n";
+        assertEquals(expected, csv);
+        verify(userService).verifyProjectAccess(10);
+    }
+
+    @Test
+    public void exportProjectSprintsComparisonCsv_returnsHeaderOnlyWhenNoSprintsMatch() {
+        when(sprintRepository.findAllByProjectIdOrderByStartDateAscIdAsc(10)).thenReturn(threeProjectSprints());
+
+        byte[] csvBytes = sprintAnalyticsService.exportProjectSprintsComparisonCsv(10, null, RANGE_BASE.minusDays(1));
+        String csv = new String(csvBytes, StandardCharsets.UTF_8);
+
+        assertEquals(
+                "projectId,sprintId,sprintName,startDate,endDate,completedIssueCount,uncompletedIssueCount,velocity\r\n",
+                csv
+        );
+        verifyNoInteractions(issueRepository, sprintIssueEventRepository);
+    }
+
+    @Test
+    public void exportProjectSprintsComparisonCsv_throwsInvalidDateRangeWhenFromIsAfterTo() {
+        assertThrows(
+                InvalidDateRangeException.class,
+                () -> sprintAnalyticsService.exportProjectSprintsComparisonCsv(10, RANGE_BASE.plusDays(1), RANGE_BASE)
+        );
         verifyNoInteractions(sprintRepository, userService, issueRepository, sprintIssueEventRepository);
     }
 

@@ -23,8 +23,12 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 import io.github.student.agile.utils.DateRangeParser;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.RequestParam;
 
+import java.nio.charset.StandardCharsets;
 import java.time.ZonedDateTime;
 
 @RestController
@@ -159,5 +163,59 @@ public class SprintAnalyticsRestController {
         ZonedDateTime fromDate = DateRangeParser.parseFrom(from);
         ZonedDateTime toDate = DateRangeParser.parseTo(to);
         return ResponseEntity.ok(sprintAnalyticsService.getProjectSprintsComparison(projectId, fromDate, toDate));
+    }
+
+    @Operation(
+            summary = "Eksportuj zestawienie porównujące sprinty projektu do pliku CSV",
+            description = "Eksportuje zestawienie sprintów wskazanego projektu do pliku CSV (RFC 4180) z opcjonalnym filtrowaniem według przedziału dat (from/to)."
+    )
+    @ApiResponses(value = {
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "Plik CSV z zestawieniem sprintów został wygenerowany",
+                    content = @Content(mediaType = "text/csv", schema = @Schema(type = "string", format = "binary"))
+            ),
+            @ApiResponse(
+                    responseCode = "400",
+                    description = "Niepoprawny parametr zapytania lub przedział dat",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiErrorResponse.class))
+            ),
+            @ApiResponse(
+                    responseCode = "401",
+                    description = "Brak lub nieprawidłowy token JWT",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiErrorResponse.class))
+            ),
+            @ApiResponse(
+                    responseCode = "403",
+                    description = "Brak dostępu do wskazanego projektu",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiErrorResponse.class))
+            ),
+            @ApiResponse(
+                    responseCode = "404",
+                    description = "Projekt o podanym identyfikatorze nie istnieje",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiErrorResponse.class))
+            )
+    })
+    @GetMapping("/projects/{projectId}/sprints/export")
+    public ResponseEntity<byte[]> exportProjectSprintsComparisonCsv(
+            @Parameter(description = "Identyfikator projektu", example = "10", required = true)
+            @PathVariable Integer projectId,
+            @Parameter(description = "Początek przedziału (włącznie), ISO-8601: yyyy-MM-dd lub data z czasem. Brak = bez dolnej granicy", example = "2026-11-01")
+            @RequestParam(required = false) String from,
+            @Parameter(description = "Koniec przedziału (włącznie), ISO-8601: yyyy-MM-dd lub data z czasem. Brak = bez górnej granicy", example = "2026-11-30")
+            @RequestParam(required = false) String to
+    ) {
+        ZonedDateTime fromDate = DateRangeParser.parseFrom(from);
+        ZonedDateTime toDate = DateRangeParser.parseTo(to);
+        byte[] csvBytes = sprintAnalyticsService.exportProjectSprintsComparisonCsv(projectId, fromDate, toDate);
+
+        ContentDisposition contentDisposition = ContentDisposition.attachment()
+                .filename("project-" + projectId + "-sprints.csv", StandardCharsets.UTF_8)
+                .build();
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition.toString())
+                .contentType(new MediaType("text", "csv", StandardCharsets.UTF_8))
+                .body(csvBytes);
     }
 }

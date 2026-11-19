@@ -16,10 +16,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
@@ -36,6 +38,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -455,5 +458,92 @@ public class SprintAnalyticsRestControllerTest {
                 .andExpect(jsonPath("$.message", is(INVALID_DATE_RANGE)))
                 .andExpect(jsonPath("$.path", is("/api/analytics/projects/10/sprints")))
                 .andExpect(jsonPath("$.trace").doesNotExist());
+    }
+
+    @Test
+    public void exportProjectSprintsComparisonCsv_returns200WithCsvHeadersAndBody() throws Exception {
+        String csv = "projectId,sprintId,sprintName,startDate,endDate,completedIssueCount,uncompletedIssueCount,velocity\r\n"
+                + "10,1,Sprint 1,2026-11-01T09:00:00Z,2026-11-05T17:00:00Z,3,1,13\r\n";
+
+        when(sprintAnalyticsService.exportProjectSprintsComparisonCsv(eq(10), any(), any()))
+                .thenReturn(csv.getBytes(StandardCharsets.UTF_8));
+
+        mvc.perform(get("/api/analytics/projects/10/sprints/export")
+                        .param("from", "2026-11-01")
+                        .param("to", "2026-11-05")
+                        .with(jwt()))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CONTENT_TYPE, "text/csv;charset=UTF-8"))
+                .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, containsString("attachment")))
+                .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, containsString("project-10-sprints.csv")))
+                .andExpect(content().string(csv));
+
+        ArgumentCaptor<ZonedDateTime> fromCaptor = ArgumentCaptor.forClass(ZonedDateTime.class);
+        ArgumentCaptor<ZonedDateTime> toCaptor = ArgumentCaptor.forClass(ZonedDateTime.class);
+        verify(sprintAnalyticsService).exportProjectSprintsComparisonCsv(eq(10), fromCaptor.capture(), toCaptor.capture());
+        assertEquals(Instant.parse("2026-11-01T00:00:00Z"), fromCaptor.getValue().toInstant());
+        assertEquals(Instant.parse("2026-11-05T23:59:59.999999999Z"), toCaptor.getValue().toInstant());
+    }
+
+    @Test
+    public void exportProjectSprintsComparisonCsv_returns200WithHeaderOnlyForEmptyResult() throws Exception {
+        String headerOnly = "projectId,sprintId,sprintName,startDate,endDate,completedIssueCount,uncompletedIssueCount,velocity\r\n";
+        when(sprintAnalyticsService.exportProjectSprintsComparisonCsv(10, null, null))
+                .thenReturn(headerOnly.getBytes(StandardCharsets.UTF_8));
+
+        mvc.perform(get("/api/analytics/projects/10/sprints/export").with(jwt()))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CONTENT_TYPE, "text/csv;charset=UTF-8"))
+                .andExpect(content().string(headerOnly));
+    }
+
+    @Test
+    public void exportProjectSprintsComparisonCsv_returns400ForMalformedDateAndInvalidRange() throws Exception {
+        mvc.perform(get("/api/analytics/projects/10/sprints/export")
+                        .param("from", "bad-date")
+                        .with(jwt()))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.status", is(400)))
+                .andExpect(jsonPath("$.message", containsString("'from'")))
+                .andExpect(jsonPath("$.trace").doesNotExist());
+
+        verifyNoInteractions(sprintAnalyticsService);
+
+        when(sprintAnalyticsService.exportProjectSprintsComparisonCsv(eq(10), any(), any()))
+                .thenThrow(new InvalidDateRangeException(INVALID_DATE_RANGE));
+
+        mvc.perform(get("/api/analytics/projects/10/sprints/export")
+                        .param("from", "2026-11-10")
+                        .param("to", "2026-11-01")
+                        .with(jwt()))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.status", is(400)))
+                .andExpect(jsonPath("$.message", is(INVALID_DATE_RANGE)))
+                .andExpect(jsonPath("$.path", is("/api/analytics/projects/10/sprints/export")))
+                .andExpect(jsonPath("$.trace").doesNotExist());
+    }
+
+    @Test
+    public void exportProjectSprintsComparisonCsv_returns401_403_404Properly() throws Exception {
+        mvc.perform(get("/api/analytics/projects/10/sprints/export"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.status", is(401)));
+
+        when(sprintAnalyticsService.exportProjectSprintsComparisonCsv(50, null, null))
+                .thenThrow(new ProjectAccessDeniedException(ACTION_NOT_ALLOWED));
+        mvc.perform(get("/api/analytics/projects/50/sprints/export").with(jwt()))
+                .andExpect(status().isForbidden())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.status", is(403)));
+
+        when(sprintAnalyticsService.exportProjectSprintsComparisonCsv(999, null, null))
+                .thenThrow(new ResourceNotFoundException(PROJECT_DOES_NOT_EXISTS));
+        mvc.perform(get("/api/analytics/projects/999/sprints/export").with(jwt()))
+                .andExpect(status().isNotFound())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.status", is(404)));
     }
 }

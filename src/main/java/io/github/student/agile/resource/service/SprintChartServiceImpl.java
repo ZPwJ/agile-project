@@ -51,7 +51,8 @@ public class SprintChartServiceImpl implements SprintChartService {
                 .timeZone(REPORT_ZONE.getId())
                 .points(progress.days().stream()
                         .map(day -> new SprintBurndownDTO.Point(day.day(), day.date(),
-                                Math.max(0, progress.initialScope() - day.completedWork())))
+                                Math.max(0, progress.initialScope() - day.completedWork()),
+                                Math.max(0, day.totalScope() - day.completedWork())))
                         .toList())
                 .build();
     }

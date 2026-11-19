@@ -1,5 +1,6 @@
 package io.github.student.agile.resource.service;
 
+import io.github.student.agile.exception.definition.ResourceNotFoundException;
 import io.github.student.agile.resource.domain.Project;
 import io.github.student.agile.resource.dto.UserDTO;
 import io.github.student.agile.resource.repository.ProjectRepository;
@@ -80,7 +81,7 @@ public class UserServiceImpl implements UserService {
     public Set<String> getAllProjectUsersUUIDs(Integer projectID) {
 
         Project project = projectRepository.findById(projectID)
-                .orElseThrow(() -> new RuntimeException(PROJECT_DOES_NOT_EXISTS));
+                .orElseThrow(() -> new ResourceNotFoundException(PROJECT_DOES_NOT_EXISTS));
 
         return project.getUserIDs();
     }

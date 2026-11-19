@@ -1,0 +1,481 @@
+package io.github.student.agile.integration;
+
+import io.github.student.agile.config.TestConfiguration;
+import io.github.student.agile.resource.domain.Issue;
+import io.github.student.agile.resource.domain.Project;
+import io.github.student.agile.resource.domain.Sprint;
+import io.github.student.agile.resource.domain.dictionary.IssueStatusID;
+import io.github.student.agile.resource.repository.IssueRepository;
+import io.github.student.agile.resource.repository.IssueStatusRepository;
+import io.github.student.agile.resource.repository.ProjectRepository;
+import io.github.student.agile.resource.repository.SprintRepository;
+import io.github.student.agile.resource.service.IssueService;
+import io.github.student.agile.resource.service.SprintService;
+import io.github.student.agile.resource.service.UserService;
+import jakarta.transaction.Transactional;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
+import org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration;
+import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
+
+import java.time.ZonedDateTime;
+
+import static io.github.student.agile.builder.IssueBuilder.createIssueEntity;
+import static io.github.student.agile.builder.ProjectBuilder.createProjectEntity;
+import static io.github.student.agile.builder.SprintBuilder.SPRINT_NAME;
+import static io.github.student.agile.builder.SprintBuilder.createSprintEntity;
+import static io.github.student.agile.builder.UserBuilder.createCurrentLoggedInUser;
+import static io.github.student.agile.exception.dictionary.ExceptionMessages.INVALID_DATE_RANGE;
+import static io.github.student.agile.exception.dictionary.ExceptionMessages.PROJECT_DOES_NOT_EXISTS;
+import static io.github.student.agile.exception.dictionary.ExceptionMessages.SPRINT_ALREADY_FINISHED;
+import static io.github.student.agile.exception.dictionary.ExceptionMessages.SPRINT_DOES_NOT_EXISTS;
+import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.CODE_REVIEW;
+import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.DONE;
+import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.IN_PROGRESS;
+import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.IN_TESTS;
+import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.TO_DO;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.hamcrest.Matchers.endsWith;
+import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.matchesPattern;
+import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.nullValue;
+import static org.hamcrest.Matchers.startsWith;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+@Transactional
+@EnableJpaAuditing
+@AutoConfigureMockMvc
+@AutoConfigureTestDatabase
+@EnableAutoConfiguration(exclude = SecurityAutoConfiguration.class)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, classes = {TestConfiguration.class})
+public class AnalyticsRestControllerIntegrationTest {
+
+    private static final String ANALYTICS_BASE_URL = "/api/analytics";
+    private static final String CSV_HEADER =
+            "projectID,sprintID,sprintName,startedAt,endedAt,historyAvailable,completedIssueCount,uncompletedIssueCount,velocity\r\n";
+
+    @Autowired
+    private MockMvc mvc;
+
+    @MockBean
+    private UserService userService;
+
+    @Autowired
+    private ProjectRepository projectRepository;
+
+    @Autowired
+    private SprintRepository sprintRepository;
+
+    @Autowired
+    private IssueRepository issueRepository;
+
+    @Autowired
+    private IssueStatusRepository issueStatusRepository;
+
+    @Autowired
+    private SprintService sprintService;
+
+    @Autowired
+    private IssueService issueService;
+
+    private Project project;
+
+    @BeforeEach
+    void setUp() {
+        when(userService.getCurrentLoggedUser()).thenReturn(createCurrentLoggedInUser());
+        project = projectRepository.save(createProjectEntity());
+    }
+
+    @Test
+    public void getSprintReport_returnsReportOfGivenSprint() throws Exception {
+
+        Sprint sprint = sprintRepository.save(createSprintEntity(project, Boolean.FALSE));
+        Issue estimated = createIssueEntity();
+        estimated.setEstimation(5);
+        Issue unestimated = createIssueEntity();
+        unestimated.setEstimation(null);
+        for (Issue issue : new Issue[]{estimated, unestimated}) {
+            issue.setIssueStatus(issueStatusRepository.findById(TO_DO.getStatusID()).orElseThrow());
+            issueRepository.save(issue);
+            sprintService.addIssueToSprint(issue.getId(), sprint.getId());
+        }
+        sprintService.startSprint(sprint.getId());
+
+        mvc.perform(get(ANALYTICS_BASE_URL + "/sprints/{id}/report", sprint.getId()))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.sprintID", is(sprint.getId())))
+                .andExpect(jsonPath("$.sprintName", is(SPRINT_NAME)))
+                .andExpect(jsonPath("$.projectID", is(project.getId())))
+                .andExpect(jsonPath("$.state", is("ACTIVE")))
+                .andExpect(jsonPath("$.startedAt", notNullValue()))
+                .andExpect(jsonPath("$.historyAvailable", is(true)))
+                .andExpect(jsonPath("$.initialIssueCount", is(2)))
+                .andExpect(jsonPath("$.completedIssueCount", is(0)))
+                .andExpect(jsonPath("$.uncompletedIssueCount", is(2)))
+                .andExpect(jsonPath("$.velocity", is(0)))
+                .andExpect(jsonPath("$.uncompletedEstimation", is(5)))
+                .andExpect(jsonPath("$.estimationUnit", is("STORY_POINTS")));
+    }
+
+    @Test
+    public void getSprintReport_notExistingSprint_returns404() throws Exception {
+
+        mvc.perform(get(ANALYTICS_BASE_URL + "/sprints/{id}/report", -1))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.status", is(404)))
+                .andExpect(jsonPath("$.error", is("Not Found")))
+                .andExpect(jsonPath("$.message", is(SPRINT_DOES_NOT_EXISTS)))
+                .andExpect(jsonPath("$.path", is(ANALYTICS_BASE_URL + "/sprints/-1/report")));
+    }
+
+    @Test
+    public void getSprintReport_nonNumericSprintID_returns400() throws Exception {
+
+        mvc.perform(get(ANALYTICS_BASE_URL + "/sprints/{id}/report", "abc"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status", is(400)))
+                .andExpect(jsonPath("$.message", is("Invalid value 'abc' for parameter 'sprintID'")));
+    }
+
+    @Test
+    public void getSprintBurndown_returnsChronologicalPoints() throws Exception {
+
+        Sprint sprint = startedSprintWithIssue(5);
+
+        mvc.perform(get(ANALYTICS_BASE_URL + "/sprints/{id}/burndown", sprint.getId()))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.sprintID", is(sprint.getId())))
+                .andExpect(jsonPath("$.projectID", is(project.getId())))
+                .andExpect(jsonPath("$.state", is("ACTIVE")))
+                .andExpect(jsonPath("$.historyAvailable", is(true)))
+                .andExpect(jsonPath("$.initialScope", is(5)))
+                .andExpect(jsonPath("$.estimationUnit", is("STORY_POINTS")))
+                .andExpect(jsonPath("$.timeZone", is("Europe/Warsaw")))
+                .andExpect(jsonPath("$.points[0].day", is(0)))
+                .andExpect(jsonPath("$.points[0].date", matchesPattern("\\d{4}-\\d{2}-\\d{2}")))
+                .andExpect(jsonPath("$.points[0].remainingWork", is(5)))
+                .andExpect(jsonPath("$.points[1].day", is(1)));
+    }
+
+    @Test
+    public void getSprintBurnup_returnsChronologicalPoints() throws Exception {
+
+        Sprint sprint = startedSprintWithIssue(3);
+
+        mvc.perform(get(ANALYTICS_BASE_URL + "/sprints/{id}/burnup", sprint.getId()))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.sprintID", is(sprint.getId())))
+                .andExpect(jsonPath("$.historyAvailable", is(true)))
+                .andExpect(jsonPath("$.estimationUnit", is("STORY_POINTS")))
+                .andExpect(jsonPath("$.timeZone", is("Europe/Warsaw")))
+                .andExpect(jsonPath("$.points[0].day", is(0)))
+                .andExpect(jsonPath("$.points[0].completedWork", is(0)))
+                .andExpect(jsonPath("$.points[0].totalScope", is(3)))
+                .andExpect(jsonPath("$.points[1].day", is(1)));
+    }
+
+    @Test
+    public void getSprintCharts_plannedSprint_returnsEmptyPoints() throws Exception {
+
+        Sprint sprint = sprintRepository.save(createSprintEntity(project, Boolean.FALSE));
+
+        for (String chart : new String[]{"burndown", "burnup"}) {
+            mvc.perform(get(ANALYTICS_BASE_URL + "/sprints/{id}/" + chart, sprint.getId()))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.state", is("PLANNED")))
+                    .andExpect(jsonPath("$.historyAvailable", is(false)))
+                    .andExpect(jsonPath("$.points", hasSize(0)));
+        }
+    }
+
+    @Test
+    public void getSprintCharts_notExistingSprint_returns404() throws Exception {
+
+        for (String chart : new String[]{"burndown", "burnup"}) {
+            mvc.perform(get(ANALYTICS_BASE_URL + "/sprints/{id}/" + chart, -1))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.message", is(SPRINT_DOES_NOT_EXISTS)))
+                    .andExpect(jsonPath("$.path", is(ANALYTICS_BASE_URL + "/sprints/-1/" + chart)));
+        }
+    }
+
+    @Test
+    public void getSprintCharts_nonNumericSprintID_returns400() throws Exception {
+
+        for (String chart : new String[]{"burndown", "burnup"}) {
+            mvc.perform(get(ANALYTICS_BASE_URL + "/sprints/{id}/" + chart, "abc"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message", is("Invalid value 'abc' for parameter 'sprintID'")));
+        }
+    }
+
+    @Test
+    public void compareProjectSprints_returnsFinishedSprintsFromOldestToNewest() throws Exception {
+
+        Sprint older = startedSprintWithIssue(5);
+        Issue done = older.getSprintIssues().iterator().next();
+        for (IssueStatusID status : new IssueStatusID[]{IN_PROGRESS, CODE_REVIEW, IN_TESTS, DONE}) {
+            issueService.changeIssueStatus(done.getId(), status.getStatusID());
+        }
+        sprintService.stopSprint(project.getId());
+        Sprint newer = startedSprintWithIssue(3);
+        sprintService.stopSprint(project.getId());
+        startedSprintWithIssue(8);
+
+        mvc.perform(get(ANALYTICS_BASE_URL + "/projects/{id}/sprints", project.getId()))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.projectID", is(project.getId())))
+                .andExpect(jsonPath("$.estimationUnit", is("STORY_POINTS")))
+                .andExpect(jsonPath("$.sprints", hasSize(2)))
+                .andExpect(jsonPath("$.sprints[0].sprintID", is(older.getId())))
+                .andExpect(jsonPath("$.sprints[0].sprintName", is(SPRINT_NAME)))
+                .andExpect(jsonPath("$.sprints[0].startedAt", matchesPattern("\\d{4}-\\d{2}-\\d{2}T.+")))
+                .andExpect(jsonPath("$.sprints[0].endedAt", matchesPattern("\\d{4}-\\d{2}-\\d{2}T.+")))
+                .andExpect(jsonPath("$.sprints[0].historyAvailable", is(true)))
+                .andExpect(jsonPath("$.sprints[0].completedIssueCount", is(1)))
+                .andExpect(jsonPath("$.sprints[0].uncompletedIssueCount", is(0)))
+                .andExpect(jsonPath("$.sprints[0].velocity", is(5)))
+                .andExpect(jsonPath("$.sprints[1].sprintID", is(newer.getId())))
+                .andExpect(jsonPath("$.sprints[1].completedIssueCount", is(0)))
+                .andExpect(jsonPath("$.sprints[1].uncompletedIssueCount", is(1)))
+                .andExpect(jsonPath("$.sprints[1].velocity", is(0)));
+    }
+
+    @Test
+    public void compareProjectSprints_projectWithoutFinishedSprints_returnsEmptyList() throws Exception {
+
+        startedSprintWithIssue(5);
+
+        mvc.perform(get(ANALYTICS_BASE_URL + "/projects/{id}/sprints", project.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.projectID", is(project.getId())))
+                .andExpect(jsonPath("$.sprints", hasSize(0)));
+    }
+
+    @Test
+    public void compareProjectSprints_notExistingProject_returns404() throws Exception {
+
+        mvc.perform(get(ANALYTICS_BASE_URL + "/projects/{id}/sprints", -1))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.status", is(404)))
+                .andExpect(jsonPath("$.error", is("Not Found")))
+                .andExpect(jsonPath("$.message", is(PROJECT_DOES_NOT_EXISTS)))
+                .andExpect(jsonPath("$.path", is(ANALYTICS_BASE_URL + "/projects/-1/sprints")));
+    }
+
+    @Test
+    public void compareProjectSprints_nonNumericProjectID_returns400() throws Exception {
+
+        mvc.perform(get(ANALYTICS_BASE_URL + "/projects/{id}/sprints", "abc"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status", is(400)))
+                .andExpect(jsonPath("$.message", is("Invalid value 'abc' for parameter 'projectID'")));
+    }
+
+    @Test
+    public void compareProjectSprints_withDateRange_returnsOverlappingSprints() throws Exception {
+
+        finishedSprint("September", "2026-09-01T09:00:00+02:00", "2026-09-14T17:00:00+02:00");
+        Sprint october = finishedSprint("October", "2026-10-01T09:00:00+02:00", "2026-10-14T17:00:00+02:00");
+        Sprint turnOfMonth = finishedSprint("Turn of month", "2026-10-28T09:00:00+01:00", "2026-11-10T17:00:00+01:00");
+        finishedSprint("November", "2026-11-16T09:00:00+01:00", "2026-11-29T17:00:00+01:00");
+
+        mvc.perform(get(ANALYTICS_BASE_URL + "/projects/{id}/sprints", project.getId())
+                        .param("from", "2026-10-14")
+                        .param("to", "2026-10-28"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.projectID", is(project.getId())))
+                .andExpect(jsonPath("$.from", is("2026-10-14")))
+                .andExpect(jsonPath("$.to", is("2026-10-28")))
+                .andExpect(jsonPath("$.timeZone", is("Europe/Warsaw")))
+                .andExpect(jsonPath("$.sprints", hasSize(2)))
+                .andExpect(jsonPath("$.sprints[0].sprintID", is(october.getId())))
+                .andExpect(jsonPath("$.sprints[0].sprintName", is("October")))
+                .andExpect(jsonPath("$.sprints[1].sprintID", is(turnOfMonth.getId())));
+    }
+
+    @Test
+    public void compareProjectSprints_withoutDateRange_returnsNullBounds() throws Exception {
+
+        finishedSprint("October", "2026-10-01T09:00:00+02:00", "2026-10-14T17:00:00+02:00");
+
+        mvc.perform(get(ANALYTICS_BASE_URL + "/projects/{id}/sprints", project.getId())
+                        .param("from", "")
+                        .param("to", ""))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.from", nullValue()))
+                .andExpect(jsonPath("$.to", nullValue()))
+                .andExpect(jsonPath("$.sprints", hasSize(1)));
+    }
+
+    @Test
+    public void compareProjectSprints_fromLaterThanTo_returns400() throws Exception {
+
+        mvc.perform(get(ANALYTICS_BASE_URL + "/projects/{id}/sprints", project.getId())
+                        .param("from", "2026-11-16")
+                        .param("to", "2026-11-15"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status", is(400)))
+                .andExpect(jsonPath("$.error", is("Bad Request")))
+                .andExpect(jsonPath("$.message", is(INVALID_DATE_RANGE)))
+                .andExpect(jsonPath("$.path", is(ANALYTICS_BASE_URL + "/projects/" + project.getId() + "/sprints")));
+    }
+
+    @Test
+    public void compareProjectSprints_invalidDate_returns400() throws Exception {
+
+        for (String[] invalid : new String[][]{{"from", "2026-13-01"}, {"to", "16.11.2026"}, {"from", "abc"}}) {
+            mvc.perform(get(ANALYTICS_BASE_URL + "/projects/{id}/sprints", project.getId()).param(invalid[0], invalid[1]))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.status", is(400)))
+                    .andExpect(jsonPath("$.message", is("Invalid value '%s' for parameter '%s'".formatted(invalid[1], invalid[0]))));
+        }
+    }
+
+    @Test
+    public void exportProjectSprints_returnsCsvFileWithFilteredSprints() throws Exception {
+
+        finishedSprint("September", "2026-09-01T09:00:00+02:00", "2026-09-14T17:00:00+02:00");
+        Sprint october = finishedSprint("October, part 1", "2026-10-01T09:00:00+02:00", "2026-10-14T17:00:00+02:00");
+        Sprint turnOfMonth = finishedSprint("Turn of month", "2026-10-28T09:00:00+01:00", "2026-11-10T17:00:00+01:00");
+
+        mvc.perform(get(ANALYTICS_BASE_URL + "/projects/{id}/sprints/export.csv", project.getId())
+                        .param("from", "2026-10-14")
+                        .param("to", "2026-10-28"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType("text/csv;charset=UTF-8"))
+                .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"project-%d-sprints.csv\"".formatted(project.getId())))
+                .andExpect(content().string(CSV_HEADER
+                        + project.getId() + "," + october.getId() + ",\"October, part 1\",2026-10-01T07:00:00Z,2026-10-14T15:00:00Z,true,0,0,0\r\n"
+                        + project.getId() + "," + turnOfMonth.getId() + ",Turn of month,2026-10-28T08:00:00Z,2026-11-10T16:00:00Z,true,0,0,0\r\n"));
+    }
+
+    @Test
+    public void exportProjectSprints_hasSameMetricsAsComparison() throws Exception {
+
+        Sprint sprint = startedSprintWithIssue(5);
+        Issue done = sprint.getSprintIssues().iterator().next();
+        for (IssueStatusID status : new IssueStatusID[]{IN_PROGRESS, CODE_REVIEW, IN_TESTS, DONE}) {
+            issueService.changeIssueStatus(done.getId(), status.getStatusID());
+        }
+        sprintService.stopSprint(project.getId());
+
+        mvc.perform(get(ANALYTICS_BASE_URL + "/projects/{id}/sprints/export.csv", project.getId()))
+                .andExpect(status().isOk())
+                .andExpect(content().string(startsWith(CSV_HEADER + project.getId() + "," + sprint.getId() + "," + SPRINT_NAME + ",")))
+                .andExpect(content().string(endsWith(",true,1,0,5\r\n")));
+    }
+
+    @Test
+    public void exportProjectSprints_projectWithoutFinishedSprints_returnsHeaderOnly() throws Exception {
+
+        startedSprintWithIssue(5);
+
+        mvc.perform(get(ANALYTICS_BASE_URL + "/projects/{id}/sprints/export.csv", project.getId()))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType("text/csv;charset=UTF-8"))
+                .andExpect(content().string(CSV_HEADER));
+    }
+
+    @Test
+    public void exportProjectSprints_notExistingProject_returns404() throws Exception {
+
+        mvc.perform(get(ANALYTICS_BASE_URL + "/projects/{id}/sprints/export.csv", -1))
+                .andExpect(status().isNotFound())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.message", is(PROJECT_DOES_NOT_EXISTS)))
+                .andExpect(jsonPath("$.path", is(ANALYTICS_BASE_URL + "/projects/-1/sprints/export.csv")));
+    }
+
+    @Test
+    public void exportProjectSprints_errorWhenClientAcceptsOnlyCsv_returnsJsonError() throws Exception {
+
+        mvc.perform(get(ANALYTICS_BASE_URL + "/projects/{id}/sprints/export.csv", -1).accept("text/csv"))
+                .andExpect(status().isNotFound())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.message", is(PROJECT_DOES_NOT_EXISTS)));
+    }
+
+    @Test
+    public void exportProjectSprints_fromLaterThanTo_returns400() throws Exception {
+
+        mvc.perform(get(ANALYTICS_BASE_URL + "/projects/{id}/sprints/export.csv", project.getId())
+                        .param("from", "2026-11-16")
+                        .param("to", "2026-11-15"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message", is(INVALID_DATE_RANGE)));
+    }
+
+    @Test
+    public void exportProjectSprints_invalidDate_returns400() throws Exception {
+
+        mvc.perform(get(ANALYTICS_BASE_URL + "/projects/{id}/sprints/export.csv", project.getId()).param("from", "2026-13-01"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message", is("Invalid value '2026-13-01' for parameter 'from'")));
+    }
+
+    private Sprint finishedSprint(String name, String startedAt, String endedAt) {
+        Sprint sprint = createSprintEntity(project, Boolean.FALSE);
+        sprint.setName(name);
+        sprint.setIsDone(Boolean.TRUE);
+        sprint.setStartedAt(ZonedDateTime.parse(startedAt));
+        sprint.setEndedAt(ZonedDateTime.parse(endedAt));
+        return sprintRepository.save(sprint);
+    }
+
+    private Sprint startedSprintWithIssue(Integer estimation) {
+        Sprint sprint = sprintRepository.save(createSprintEntity(project, Boolean.FALSE));
+        Issue issue = createIssueEntity();
+        issue.setEstimation(estimation);
+        issue.setIssueStatus(issueStatusRepository.findById(TO_DO.getStatusID()).orElseThrow());
+        issueRepository.save(issue);
+        sprintService.addIssueToSprint(issue.getId(), sprint.getId());
+        sprintService.startSprint(sprint.getId());
+        return sprint;
+    }
+
+    @Test
+    public void addIssueToFinishedSprint_returns409() throws Exception {
+
+        Sprint sprint = sprintRepository.save(createSprintEntity(project, Boolean.FALSE));
+        sprint.setIsDone(Boolean.TRUE);
+        Issue issue = createIssueEntity();
+        issue.setIssueStatus(issueStatusRepository.findById(TO_DO.getStatusID()).orElseThrow());
+        issueRepository.save(issue);
+
+        mvc.perform(post("/api/sprint/{sprintID}/issue/{issueID}", sprint.getId(), issue.getId()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.status", is(409)))
+                .andExpect(jsonPath("$.message", is(SPRINT_ALREADY_FINISHED)));
+    }
+
+    @Test
+    public void startNotExistingSprint_returns404() throws Exception {
+
+        mvc.perform(patch("/api/sprint/start/{id}", -1))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message", is(SPRINT_DOES_NOT_EXISTS)));
+    }
+}

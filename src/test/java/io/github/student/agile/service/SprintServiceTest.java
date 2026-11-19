@@ -7,11 +7,13 @@ import io.github.student.agile.resource.domain.Issue;
 import io.github.student.agile.resource.domain.IssueStatus;
 import io.github.student.agile.resource.domain.Project;
 import io.github.student.agile.resource.domain.Sprint;
+import io.github.student.agile.resource.domain.SprintIssueEvent;
 import io.github.student.agile.resource.dto.SprintDTO;
 import io.github.student.agile.resource.repository.BacklogRepository;
 import io.github.student.agile.resource.repository.IssueRepository;
 import io.github.student.agile.resource.repository.IssueStatusRepository;
 import io.github.student.agile.resource.repository.ProjectRepository;
+import io.github.student.agile.resource.repository.SprintIssueEventRepository;
 import io.github.student.agile.resource.repository.SprintRepository;
 import io.github.student.agile.resource.service.SprintService;
 import io.github.student.agile.resource.service.UserService;
@@ -43,16 +45,21 @@ import static io.github.student.agile.builder.SprintBuilder.createSprintEntity;
 import static io.github.student.agile.builder.UserBuilder.createCurrentLoggedInUser;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.ACTIVE_SPRINT_EXISTS;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.EMPTY_SPRINT;
+import static io.github.student.agile.exception.dictionary.ExceptionMessages.ISSUE_ALREADY_DONE;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.ISSUE_ALREADY_HAS_SPRINT;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.ISSUE_DOES_NOT_EXISTS;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.NO_ACTIVE_SPRINT_IN_PROJECT;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.PROJECT_DOES_NOT_EXISTS;
+import static io.github.student.agile.exception.dictionary.ExceptionMessages.SPRINT_ALREADY_FINISHED;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.SPRINT_DOES_NOT_EXISTS;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.SPRINT_NAME_NOT_UNIQUE;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.SPRINT_START_DATE_IN_THE_FUTURE;
 import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.DONE;
 import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.IN_PROGRESS;
 import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.TO_DO;
+import static io.github.student.agile.resource.domain.dictionary.SprintIssueEventType.ADDED;
+import static io.github.student.agile.resource.domain.dictionary.SprintIssueEventType.REMOVED;
+import static io.github.student.agile.resource.domain.dictionary.SprintIssueEventType.SCOPE_AT_START;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -81,6 +88,9 @@ public class SprintServiceTest {
 
     @Autowired
     private IssueStatusRepository issueStatusRepository;
+
+    @Autowired
+    private SprintIssueEventRepository sprintIssueEventRepository;
 
     @MockBean
     private UserService userService;
@@ -217,6 +227,54 @@ public class SprintServiceTest {
         //then
         assertNotNull(issueAfterSave);
         assertEquals(sprintID, issueAfterSave.getSprint().getId());
+        assertTrue(sprintIssueEventRepository.findAllBySprintIDOrderByOccurredAtAscIdAsc(sprintID).isEmpty());
+    }
+
+    @Test
+    public void addIssueToSprint_activeSprint_recordsAddedEventTest() {
+
+        //given
+        Integer sprintID = sprintRepository.save(createSprintEntity(defaultScrumProject, Boolean.TRUE)).getId();
+        Issue issue = issueRepository.save(createIssueEntity());
+
+        //when
+        sprintService.addIssueToSprint(issue.getId(), sprintID);
+        List<SprintIssueEvent> events = sprintIssueEventRepository.findAllBySprintIDOrderByOccurredAtAscIdAsc(sprintID);
+
+        //then
+        assertEquals(1, events.size());
+        assertEquals(ADDED, events.get(0).getType());
+        assertEquals(issue.getId(), events.get(0).getIssueID());
+        assertEquals(issue.getEstimation(), events.get(0).getEstimation());
+    }
+
+    @Test
+    public void addIssueToSprint_throwsIssueAlreadyDoneExceptionTest() {
+
+        //given
+        Integer sprintID = sprintRepository.save(createSprintEntity(defaultScrumProject, Boolean.FALSE)).getId();
+        Issue doneIssue = issueRepository.save(createIssueEntityWithIssueStatus(issueStatusRepository.getReferenceById(DONE.getStatusID())));
+
+        //when
+        Exception exception = assertThrows(RuntimeException.class, () -> sprintService.addIssueToSprint(doneIssue.getId(), sprintID));
+
+        //then
+        assertEquals(ISSUE_ALREADY_DONE, exception.getMessage());
+        assertNull(doneIssue.getSprint());
+    }
+
+    @Test
+    public void addIssueToSprint_throwsSprintAlreadyFinishedExceptionTest() {
+
+        //given
+        Integer sprintID = sprintRepository.save(createFinishedSprintEntity()).getId();
+        Integer issueID = issueRepository.save(createIssueEntity()).getId();
+
+        //when
+        Exception exception = assertThrows(RuntimeException.class, () -> sprintService.addIssueToSprint(issueID, sprintID));
+
+        //then
+        assertEquals(SPRINT_ALREADY_FINISHED, exception.getMessage());
     }
 
     @Test
@@ -275,6 +333,44 @@ public class SprintServiceTest {
 
         //then
         assertTrue(existsActiveSprint);
+        assertNotNull(sprint.getStartedAt());
+    }
+
+    @Test
+    public void startSprint_recordsScopeAtStartTest() {
+
+        //given
+        Sprint sprint = sprintRepository.save(createSprintEntity(defaultScrumProject, Boolean.FALSE));
+        Issue estimated = createIssueEntity();
+        estimated.setSprint(sprint);
+        Issue unestimated = issueRepository.save(createIssueEntityWithSprint(sprint));
+        issueRepository.save(estimated);
+        sprint.setSprintIssues(new HashSet<>(List.of(estimated, unestimated)));
+        sprintRepository.save(sprint);
+
+        //when
+        sprintService.startSprint(sprint.getId());
+        List<SprintIssueEvent> events = sprintIssueEventRepository.findAllBySprintIDOrderByOccurredAtAscIdAsc(sprint.getId());
+
+        //then
+        assertEquals(2, events.size());
+        assertTrue(events.stream().allMatch(event -> SCOPE_AT_START.equals(event.getType())));
+        assertEquals(Set.of(estimated.getId(), unestimated.getId()),
+                new HashSet<>(events.stream().map(SprintIssueEvent::getIssueID).toList()));
+        assertTrue(events.stream().anyMatch(event -> event.getEstimation() == null));
+    }
+
+    @Test
+    public void startSprint_throwsSprintAlreadyFinishedExceptionTest() {
+
+        //given
+        Integer sprintID = sprintRepository.save(createFinishedSprintEntity()).getId();
+
+        //when
+        Exception exception = assertThrows(RuntimeException.class, () -> sprintService.startSprint(sprintID));
+
+        //then
+        assertEquals(SPRINT_ALREADY_FINISHED, exception.getMessage());
     }
 
     @Test
@@ -354,7 +450,10 @@ public class SprintServiceTest {
         assertEquals(DONE.getStatusID(), doneIssue.getIssueStatus().getId());
         assertNull(inProgressIssue.getSprint());
         assertNull(doneIssue.getSprint());
-        assertNull(sprintAfterStopOperation);
+        assertNotNull(sprintAfterStopOperation);
+        assertTrue(sprintAfterStopOperation.getIsDone());
+        assertFalse(sprintAfterStopOperation.getActive());
+        assertNotNull(sprintAfterStopOperation.getEndedAt());
     }
 
     @Test
@@ -428,6 +527,39 @@ public class SprintServiceTest {
 
         //then
         assertEquals(SPRINT_DOES_NOT_EXISTS, exception.getMessage());
+    }
+
+    @Test
+    public void deleteSprint_throwsSprintAlreadyFinishedExceptionTest() {
+
+        //given
+        Integer sprintID = sprintRepository.save(createFinishedSprintEntity()).getId();
+
+        //when
+        Exception exception = assertThrows(RuntimeException.class, () -> sprintService.deleteSprint(sprintID));
+
+        //then
+        assertEquals(SPRINT_ALREADY_FINISHED, exception.getMessage());
+        assertTrue(sprintRepository.existsById(sprintID));
+    }
+
+    @Test
+    public void deleteIssueFromSprint_activeSprint_recordsRemovedEventTest() {
+
+        //given
+        Sprint sprint = sprintRepository.save(createSprintEntity(defaultScrumProject, Boolean.TRUE));
+        Issue issue = issueRepository.save(createIssueEntityWithSprint(sprint));
+        sprint.setSprintIssues(new HashSet<>(Sets.newSet(issue)));
+        sprintRepository.save(sprint);
+
+        //when
+        sprintService.deleteIssueFromSprint(sprint.getId(), issue.getId());
+        List<SprintIssueEvent> events = sprintIssueEventRepository.findAllBySprintIDOrderByOccurredAtAscIdAsc(sprint.getId());
+
+        //then
+        assertEquals(1, events.size());
+        assertEquals(REMOVED, events.get(0).getType());
+        assertEquals(issue.getId(), events.get(0).getIssueID());
     }
 
     @Test
@@ -505,6 +637,12 @@ public class SprintServiceTest {
 
         // this returned object is only for this method purpose
         return new SprintWithIssues(doneIssue, inProgressIssue, activeSprint);
+    }
+
+    private Sprint createFinishedSprintEntity() {
+        Sprint sprint = createSprintEntity(defaultScrumProject, Boolean.FALSE);
+        sprint.setIsDone(Boolean.TRUE);
+        return sprint;
     }
 
     private record SprintWithIssues(Issue doneIssue, Issue otherIssue, Sprint sprint){}

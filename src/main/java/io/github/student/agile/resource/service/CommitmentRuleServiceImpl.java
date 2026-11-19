@@ -1,11 +1,13 @@
 package io.github.student.agile.resource.service;
 
+import io.github.student.agile.exception.definition.ResourceNotFoundException;
 import io.github.student.agile.resource.domain.CommitmentRule;
 import io.github.student.agile.resource.domain.Project;
 import io.github.student.agile.resource.dto.CommitmentRuleDTO;
 import io.github.student.agile.resource.mapper.CommitmentRuleDTOMapper;
 import io.github.student.agile.resource.repository.CommitmentRuleRepository;
 import io.github.student.agile.resource.repository.ProjectRepository;
+import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -16,6 +18,7 @@ import java.util.stream.Collectors;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.PROJECT_DOES_NOT_EXISTS;
 
 @Service
+@Transactional
 @RequiredArgsConstructor
 public class CommitmentRuleServiceImpl implements CommitmentRuleService {
 
@@ -26,7 +29,7 @@ public class CommitmentRuleServiceImpl implements CommitmentRuleService {
     @Override
     public Set<CommitmentRuleDTO> getAllRules(Integer projectID) {
 
-        Project project = projectRepository.findById(projectID).orElseThrow(() -> new RuntimeException(PROJECT_DOES_NOT_EXISTS));
+        Project project = projectRepository.findById(projectID).orElseThrow(() -> new ResourceNotFoundException(PROJECT_DOES_NOT_EXISTS));
         return project.getDod().stream()
                 .map(ruleDTOMapper::map)
                 .collect(Collectors.toSet());
@@ -35,7 +38,7 @@ public class CommitmentRuleServiceImpl implements CommitmentRuleService {
     @Override
     public CommitmentRuleDTO defineRule(Integer projectID, String rule) {
 
-        Project project = projectRepository.findById(projectID).orElseThrow(() -> new RuntimeException(PROJECT_DOES_NOT_EXISTS));
+        Project project = projectRepository.findById(projectID).orElseThrow(() -> new ResourceNotFoundException(PROJECT_DOES_NOT_EXISTS));
         CommitmentRule singleRule = new CommitmentRule();
         singleRule.setRule(rule);
         ruleRepository.save(singleRule);
@@ -60,7 +63,7 @@ public class CommitmentRuleServiceImpl implements CommitmentRuleService {
     @Override
     public void deleteRule(Integer projectID, Integer ruleID) {
 
-        Project project = projectRepository.findById(projectID).orElseThrow(() -> new RuntimeException(PROJECT_DOES_NOT_EXISTS));
+        Project project = projectRepository.findById(projectID).orElseThrow(() -> new ResourceNotFoundException(PROJECT_DOES_NOT_EXISTS));
         CommitmentRule ruleToDelete = ruleRepository.findById(ruleID).orElseThrow();
         Set<CommitmentRule> projectRules = project.getDod();
         projectRules.remove(ruleToDelete);
@@ -72,7 +75,7 @@ public class CommitmentRuleServiceImpl implements CommitmentRuleService {
     @Override
     public void deleteAllRules(Integer projectID) {
 
-        Project project = projectRepository.findById(projectID).orElseThrow(() -> new RuntimeException(PROJECT_DOES_NOT_EXISTS));
+        Project project = projectRepository.findById(projectID).orElseThrow(() -> new ResourceNotFoundException(PROJECT_DOES_NOT_EXISTS));
         Set<CommitmentRule> projectRules = project.getDod();
         project.setDod(new HashSet<>());
         projectRepository.save(project);

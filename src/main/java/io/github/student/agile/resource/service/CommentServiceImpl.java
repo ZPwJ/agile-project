@@ -1,5 +1,7 @@
 package io.github.student.agile.resource.service;
 
+import io.github.student.agile.exception.definition.ProjectAccessDeniedException;
+import io.github.student.agile.exception.definition.ResourceNotFoundException;
 import io.github.student.agile.resource.domain.Comment;
 import io.github.student.agile.resource.domain.Issue;
 import io.github.student.agile.resource.dto.CommentDTO;
@@ -32,7 +34,7 @@ public class CommentServiceImpl implements CommentService {
     public List<CommentDTO> getAllCommentsForIssueID(Integer issueID) {
 
         Issue issue = issueRepository.findById(issueID)
-                .orElseThrow(() -> new RuntimeException(ISSUE_DOES_NOT_EXISTS));
+                .orElseThrow(() -> new ResourceNotFoundException(ISSUE_DOES_NOT_EXISTS));
 
         return issue.getComments()
                 .stream()
@@ -45,7 +47,7 @@ public class CommentServiceImpl implements CommentService {
 
         UserDTO currentLoggedInUser = userService.getCurrentLoggedUser();
         Issue commentedIssue = issueRepository.findById(comment.getIssueID())
-                .orElseThrow(() -> new RuntimeException(ISSUE_DOES_NOT_EXISTS));
+                .orElseThrow(() -> new ResourceNotFoundException(ISSUE_DOES_NOT_EXISTS));
 
         Comment createdComment = Comment.builder()
                 .body(comment.getBody())
@@ -65,13 +67,13 @@ public class CommentServiceImpl implements CommentService {
         UserDTO currentLoggedInUser = userService.getCurrentLoggedUser();
 
         Comment updatedComment = commentRepository.findById(comment.getCommentID())
-                .orElseThrow(() -> new RuntimeException(COMMENT_DOES_NOT_EXISTS));
+                .orElseThrow(() -> new ResourceNotFoundException(COMMENT_DOES_NOT_EXISTS));
 
         if (updatedComment.getCreatedBy().equals(currentLoggedInUser.getUuid())) {
             updatedComment.setBody(comment.getBody());
             commentRepository.save(updatedComment);
         } else {
-            throw new RuntimeException(FORBIDDEN_COMMENT_ACCESS);
+            throw new ProjectAccessDeniedException(FORBIDDEN_COMMENT_ACCESS);
         }
 
         return commentDTOMapper.map(updatedComment, currentLoggedInUser);
@@ -83,7 +85,7 @@ public class CommentServiceImpl implements CommentService {
         UserDTO currentLoggedInUser = userService.getCurrentLoggedUser();
 
         Comment comment = commentRepository.findById(commentID)
-                .orElseThrow(() -> new RuntimeException(COMMENT_DOES_NOT_EXISTS));
+                .orElseThrow(() -> new ResourceNotFoundException(COMMENT_DOES_NOT_EXISTS));
 
         if (comment.getCreatedBy().equals(currentLoggedInUser.getUuid())) {
 
@@ -94,7 +96,7 @@ public class CommentServiceImpl implements CommentService {
 
             commentRepository.deleteById(commentID);
         } else {
-            throw new RuntimeException(FORBIDDEN_COMMENT_ACCESS);
+            throw new ProjectAccessDeniedException(FORBIDDEN_COMMENT_ACCESS);
         }
     }
 }

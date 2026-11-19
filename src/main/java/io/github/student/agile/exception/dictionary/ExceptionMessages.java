@@ -25,4 +25,7 @@ public interface ExceptionMessages {
     String COMMENT_DOES_NOT_EXISTS = "Comment with given ID does not exists";
     String FORBIDDEN_COMMENT_ACCESS = "It is not allowed to modify or delete comment of another user";
     String USERS_NUMBER_EXCEEDED = "The maximum number of users has been exceeded";
+    String PROJECT_ACCESS_DENIED = "Current user does not have access to this project";
+    String INVALID_DATE_RANGE = "Invalid date range: 'from' date must not be after 'to' date";
+    String INVALID_DATE_FORMAT = "Invalid date format for parameter '%s'. Expected ISO-8601 date (yyyy-MM-dd) or date-time";
 }

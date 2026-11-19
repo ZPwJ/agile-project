@@ -1,0 +1,13 @@
+
+spring:
+  config:
+    activate:
+      on-profile: dev
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/agiledb_demo
+
+  sql:
+    init:
+      mode: always
+      data-locations: classpath:data-demo.sql

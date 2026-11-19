@@ -36,8 +36,9 @@ public class SprintBurndownDTO {
     private List<Point> points;
 
     /**
-     * @param remainingWork initial scope minus the work completed until this point, never below 0
+     * @param remainingWork  initial scope minus the work completed until this point, never below 0
+     * @param remainingScope current scope (including work added after the start) minus the work completed until this point
      */
-    public record Point(int day, LocalDate date, int remainingWork) {
+    public record Point(int day, LocalDate date, int remainingWork, int remainingScope) {
     }
 }

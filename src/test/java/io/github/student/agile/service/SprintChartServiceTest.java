@@ -119,7 +119,7 @@ public class SprintChartServiceTest {
         assertEquals(8, burndown.getInitialScope());
         assertEquals(SprintReportDTO.STORY_POINTS, burndown.getEstimationUnit());
         assertEquals("Europe/Warsaw", burndown.getTimeZone());
-        assertEquals(new SprintBurndownDTO.Point(0, burndown.getPoints().get(0).date(), 8), burndown.getPoints().get(0));
+        assertEquals(new SprintBurndownDTO.Point(0, burndown.getPoints().get(0).date(), 8, 8), burndown.getPoints().get(0));
         assertEquals(3, lastOf(burndown.getPoints()).remainingWork());
         assertChronological(burndown.getPoints().stream().map(SprintBurndownDTO.Point::day).toList());
     }
@@ -143,6 +143,24 @@ public class SprintChartServiceTest {
         assertEquals(2, burndown.getInitialScope());
         assertEquals(0, lastOf(burndown.getPoints()).remainingWork());
         assertTrue(burndown.getPoints().stream().allMatch(point -> point.remainingWork() >= 0));
+    }
+
+    @Test
+    public void getBurndown_uncompletedWorkAddedAfterStart_isShownInRemainingScope() {
+
+        //given
+        Sprint sprint = sprintRepository.save(createSprintEntity(project, FALSE));
+        Issue initial = addIssue(sprint, 2);
+        sprintService.startSprint(sprint.getId());
+        addIssue(sprint, 13);
+        complete(initial);
+
+        //when
+        SprintBurndownDTO.Point last = lastOf(sprintChartService.getBurndown(sprint.getId()).getPoints());
+
+        //then
+        assertEquals(0, last.remainingWork());
+        assertEquals(13, last.remainingScope());
     }
 
     @Test

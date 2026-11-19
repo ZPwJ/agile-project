@@ -135,7 +135,7 @@ Once the services have started, the main endpoints are:
 |---|---|
 | Resource server | [http://localhost:8081](http://localhost:8081) |
 | Authentication server | [http://localhost:8080](http://localhost:8080) |
-| OpenAPI UI | [http://localhost:8081/docs.html](http://localhost:8081/docs.html) |
+| OpenAPI UI | [http://localhost:8081/swagger-ui/index.html](http://localhost:8081/swagger-ui/index.html) |
 | OpenAPI specification | [http://localhost:8081/api-docs](http://localhost:8081/api-docs) |
 
 The API may require authentication for protected endpoints.

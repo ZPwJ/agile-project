@@ -68,6 +68,7 @@ public class DictionaryServiceTest {
         //then
         assertEquals(expectedTypesAmount, actualTypesAmount);
         assertIterableEquals(issueTypeRepository.findAll(), allTypes);
+        assertEquals(4, actualTypesAmount);
     }
 
     @Test

@@ -46,6 +46,11 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import io.github.student.agile.exception.definition.InvalidDateRangeException;
+import io.github.student.agile.resource.dto.SprintComparisonItemDTO;   // już jest
+import static io.github.student.agile.exception.dictionary.ExceptionMessages.INVALID_DATE_RANGE;
+import static org.mockito.ArgumentMatchers.anyCollection;
+
 @ExtendWith(MockitoExtension.class)
 public class SprintAnalyticsServiceImplTest {
 
@@ -630,6 +635,144 @@ public class SprintAnalyticsServiceImplTest {
         assertThrows(ProjectAccessDeniedException.class, () -> sprintAnalyticsService.getProjectSprintsComparison(50));
 
         verifyNoInteractions(sprintRepository, issueRepository, sprintIssueEventRepository);
+    }
+    private static final ZonedDateTime RANGE_BASE = ZonedDateTime.of(2026, 11, 1, 9, 0, 0, 0, ZoneOffset.UTC);
+
+    // Sprint 1: 1 Nov 09:00 - 5 Nov 17:00 | Sprint 2: 6 Nov 09:00 - 10 Nov 17:00 | Sprint 3 (aktywny): od 11 Nov 09:00
+    private List<Sprint> threeProjectSprints() {
+        return List.of(
+                rangeSprint(1, 10, RANGE_BASE, RANGE_BASE.plusDays(4).plusHours(8), false, true),
+                rangeSprint(2, 10, RANGE_BASE.plusDays(5), RANGE_BASE.plusDays(9).plusHours(8), false, true),
+                rangeSprint(3, 10, RANGE_BASE.plusDays(10), null, true, false)
+        );
+    }
+
+    private Sprint rangeSprint(Integer id, Integer projectId, ZonedDateTime start, ZonedDateTime end, boolean active, boolean done) {
+        return Sprint.builder()
+                .id(id)
+                .name("Sprint " + id)
+                .project(Project.builder().id(projectId).build())
+                .startDate(start)
+                .endDate(end)
+                .active(active)
+                .isDone(done)
+                .build();
+    }
+
+    private void stubProjectSprints(Integer projectId, List<Sprint> sprints) {
+        when(sprintRepository.findAllByProjectIdOrderByStartDateAscIdAsc(projectId)).thenReturn(sprints);
+        when(issueRepository.findAllBySprintIdIn(anyCollection())).thenReturn(Collections.emptyList());
+        when(sprintIssueEventRepository.findAllBySprintIdInOrderByOccurredAtAscIdAsc(anyCollection()))
+                .thenReturn(Collections.emptyList());
+    }
+
+    private List<Integer> sprintIds(List<SprintComparisonItemDTO> items) {
+        return items.stream().map(SprintComparisonItemDTO::getSprintId).toList();
+    }
+
+    @Test
+    public void getProjectSprintsComparison_withoutRangeReturnsAllQualifyingSprints() {
+        stubProjectSprints(10, threeProjectSprints());
+
+        assertEquals(List.of(1, 2, 3), sprintIds(sprintAnalyticsService.getProjectSprintsComparison(10, null, null)));
+        assertEquals(List.of(1, 2, 3), sprintIds(sprintAnalyticsService.getProjectSprintsComparison(10)));
+    }
+
+    @Test
+    public void getProjectSprintsComparison_returnsSprintsOverlappingRangeInStableOrder() {
+        stubProjectSprints(10, threeProjectSprints());
+
+        // 4 Nov - 7 Nov: nachodzi na sprint 1 (koniec 5 Nov) i sprint 2 (start 6 Nov), sprint 3 zaczyna się później
+        List<SprintComparisonItemDTO> result = sprintAnalyticsService.getProjectSprintsComparison(
+                10, RANGE_BASE.plusDays(3), RANGE_BASE.plusDays(6));
+
+        assertEquals(List.of(1, 2), sprintIds(result));
+        verify(userService).verifyProjectAccess(10);
+    }
+
+    @Test
+    public void getProjectSprintsComparison_rangeBoundariesAreInclusive() {
+        stubProjectSprints(10, threeProjectSprints());
+        ZonedDateTime sprint1End = RANGE_BASE.plusDays(4).plusHours(8);
+        ZonedDateTime sprint2Start = RANGE_BASE.plusDays(5);
+
+        // from == koniec sprintu 1 -> sprint 1 nadal wchodzi
+        assertEquals(List.of(1, 2, 3), sprintIds(sprintAnalyticsService.getProjectSprintsComparison(10, sprint1End, null)));
+        // from tuż po końcu sprintu 1 -> sprint 1 odpada
+        assertEquals(List.of(2, 3), sprintIds(sprintAnalyticsService.getProjectSprintsComparison(10, sprint1End.plusSeconds(1), null)));
+        // to == start sprintu 2 -> sprint 2 nadal wchodzi
+        assertEquals(List.of(1, 2), sprintIds(sprintAnalyticsService.getProjectSprintsComparison(10, null, sprint2Start)));
+        // to tuż przed startem sprintu 2 -> sprint 2 odpada
+        assertEquals(List.of(1), sprintIds(sprintAnalyticsService.getProjectSprintsComparison(10, null, sprint2Start.minusSeconds(1))));
+    }
+
+    @Test
+    public void getProjectSprintsComparison_fromEqualToSingleInstantIsAllowed() {
+        stubProjectSprints(10, threeProjectSprints());
+        ZonedDateTime instantInsideSprint1 = RANGE_BASE.plusDays(2);
+
+        List<SprintComparisonItemDTO> result = sprintAnalyticsService.getProjectSprintsComparison(
+                10, instantInsideSprint1, instantInsideSprint1);
+
+        assertEquals(List.of(1), sprintIds(result));
+    }
+
+    @Test
+    public void getProjectSprintsComparison_activeSprintWithoutEndDateMatchesAnyLaterRange() {
+        stubProjectSprints(10, threeProjectSprints());
+
+        List<SprintComparisonItemDTO> result = sprintAnalyticsService.getProjectSprintsComparison(
+                10, ZonedDateTime.of(2026, 12, 1, 0, 0, 0, 0, ZoneOffset.UTC), null);
+
+        assertEquals(List.of(3), sprintIds(result));
+        assertNull(result.get(0).getEndDate());
+    }
+
+    @Test
+    public void getProjectSprintsComparison_returnsEmptyListAndSkipsDataLoadingWhenNothingOverlapsRange() {
+        when(sprintRepository.findAllByProjectIdOrderByStartDateAscIdAsc(10)).thenReturn(threeProjectSprints());
+
+        List<SprintComparisonItemDTO> result = sprintAnalyticsService.getProjectSprintsComparison(
+                10, null, RANGE_BASE.minusDays(1));
+
+        assertTrue(result.isEmpty());
+        verifyNoInteractions(issueRepository, sprintIssueEventRepository);
+    }
+
+    @Test
+    public void getProjectSprintsComparison_rangeFilterKeepsStrictProjectIsolation() {
+        Sprint foreignSprint = rangeSprint(6, 99, RANGE_BASE, RANGE_BASE.plusDays(3), false, true);
+        stubProjectSprints(10, List.of(threeProjectSprints().get(0), foreignSprint));
+
+        List<SprintComparisonItemDTO> result = sprintAnalyticsService.getProjectSprintsComparison(
+                10, RANGE_BASE, RANGE_BASE.plusDays(10));
+
+        assertEquals(List.of(1), sprintIds(result));
+        assertEquals(10, result.get(0).getProjectId());
+    }
+
+    @Test
+    public void getProjectSprintsComparison_handlesLegacyAndUndatedSprintsWhenFiltering() {
+        Sprint doneWithoutEndDate = rangeSprint(4, 10, RANGE_BASE, null, false, true);
+        Sprint undated = rangeSprint(5, 10, null, null, false, true);
+        stubProjectSprints(10, List.of(doneWithoutEndDate, undated));
+
+        // bez filtra oba sprinty są zwracane
+        assertEquals(List.of(4, 5), sprintIds(sprintAnalyticsService.getProjectSprintsComparison(10)));
+        // z filtrem: zakończony sprint bez endDate = punkt w startDate (wychodzi poza from), sprint bez dat jest pomijany
+        assertTrue(sprintAnalyticsService.getProjectSprintsComparison(10, RANGE_BASE.plusDays(1), null).isEmpty());
+        assertEquals(List.of(4), sprintIds(sprintAnalyticsService.getProjectSprintsComparison(10, RANGE_BASE, RANGE_BASE)));
+    }
+
+    @Test
+    public void getProjectSprintsComparison_throwsInvalidDateRangeWhenFromIsAfterTo() {
+        InvalidDateRangeException exception = assertThrows(
+                InvalidDateRangeException.class,
+                () -> sprintAnalyticsService.getProjectSprintsComparison(10, RANGE_BASE.plusDays(1), RANGE_BASE)
+        );
+
+        assertEquals(INVALID_DATE_RANGE, exception.getMessage());
+        verifyNoInteractions(sprintRepository, userService, issueRepository, sprintIssueEventRepository);
     }
 
     private void assertPoint(BurnupPointDTO point, LocalDate expectedDate, int expectedCompleted, int expectedScope) {

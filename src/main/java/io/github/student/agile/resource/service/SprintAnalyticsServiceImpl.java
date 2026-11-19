@@ -17,7 +17,7 @@ import io.github.student.agile.resource.repository.SprintRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
+import io.github.student.agile.exception.definition.InvalidDateRangeException;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
@@ -117,10 +117,11 @@ public class SprintAnalyticsServiceImpl implements SprintAnalyticsService {
     }
 
     @Override
-    public List<SprintComparisonItemDTO> getProjectSprintsComparison(Integer projectId) {
+    public List<SprintComparisonItemDTO> getProjectSprintsComparison(Integer projectId, ZonedDateTime from, ZonedDateTime to) {
         if (projectId == null) {
             throw new NullIdentifierException();
         }
+        validateDateRange(from, to);
 
         userService.verifyProjectAccess(projectId);
 
@@ -128,6 +129,7 @@ public class SprintAnalyticsServiceImpl implements SprintAnalyticsService {
                 .filter(sprint -> sprint != null
                         && (sprint.getProject() == null || projectId.equals(sprint.getProject().getId()))
                         && (Boolean.TRUE.equals(sprint.getIsDone()) || Boolean.TRUE.equals(sprint.getActive())))
+                .filter(sprint -> overlapsRange(sprint, from, to))
                 .sorted(Comparator
                         .comparing(Sprint::getStartDate, Comparator.nullsLast(Comparator.naturalOrder()))
                         .thenComparing(Sprint::getId, Comparator.nullsLast(Comparator.naturalOrder())))
@@ -197,6 +199,35 @@ public class SprintAnalyticsServiceImpl implements SprintAnalyticsService {
 
         userService.verifyProjectAccess(sprint.getProject().getId());
         return sprint;
+    }
+    private void validateDateRange(ZonedDateTime from, ZonedDateTime to) {
+        if (from != null && to != null && from.isAfter(to)) {
+            throw new InvalidDateRangeException();
+        }
+    }
+
+    /**
+     * Sprint spełnia filtr, gdy jego okres [start, end] nachodzi na [from, to] (granice włącznie).
+     * - sprint aktywny (brak endDate) trwa bez końca,
+     * - sprint zakończony bez endDate (dane legacy) jest traktowany jako punkt w startDate,
+     * - sprint bez żadnej daty nie daje się umieścić w czasie, więc przy aktywnym filtrze jest pomijany.
+     */
+    private boolean overlapsRange(Sprint sprint, ZonedDateTime from, ZonedDateTime to) {
+        if (from == null && to == null) {
+            return true;
+        }
+        ZonedDateTime sprintStart = sprint.getStartDate() != null ? sprint.getStartDate() : sprint.getEndDate();
+        if (sprintStart == null) {
+            return false;
+        }
+        ZonedDateTime sprintEnd = sprint.getEndDate();
+        if (sprintEnd == null && Boolean.TRUE.equals(sprint.getIsDone())) {
+            sprintEnd = sprintStart;
+        }
+
+        boolean startsBeforeRangeEnd = to == null || !sprintStart.isAfter(to);
+        boolean endsAfterRangeStart = from == null || sprintEnd == null || !sprintEnd.isBefore(from);
+        return startsBeforeRangeEnd && endsAfterRangeStart;
     }
 
     private List<BurnupPointDTO> buildBurnupPoints(Sprint sprint, List<SprintIssueEvent> events) {

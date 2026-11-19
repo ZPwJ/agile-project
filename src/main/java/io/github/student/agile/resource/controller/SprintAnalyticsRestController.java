@@ -22,6 +22,11 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
+import io.github.student.agile.utils.DateRangeParser;
+import org.springframework.web.bind.annotation.RequestParam;
+
+import java.time.ZonedDateTime;
+
 @RestController
 @RequestMapping("/api/analytics")
 @RequiredArgsConstructor
@@ -145,8 +150,14 @@ public class SprintAnalyticsRestController {
     @GetMapping("/projects/{projectId}/sprints")
     public ResponseEntity<List<SprintComparisonItemDTO>> getProjectSprintsComparison(
             @Parameter(description = "Identyfikator projektu", example = "10", required = true)
-            @PathVariable Integer projectId
+            @PathVariable Integer projectId,
+            @Parameter(description = "Początek przedziału (włącznie), ISO-8601: yyyy-MM-dd lub data z czasem. Brak = bez dolnej granicy", example = "2026-11-01")
+            @RequestParam(required = false) String from,
+            @Parameter(description = "Koniec przedziału (włącznie), ISO-8601: yyyy-MM-dd lub data z czasem. Brak = bez górnej granicy", example = "2026-11-30")
+            @RequestParam(required = false) String to
     ) {
-        return ResponseEntity.ok(sprintAnalyticsService.getProjectSprintsComparison(projectId));
+        ZonedDateTime fromDate = DateRangeParser.parseFrom(from);
+        ZonedDateTime toDate = DateRangeParser.parseTo(to);
+        return ResponseEntity.ok(sprintAnalyticsService.getProjectSprintsComparison(projectId, fromDate, toDate));
     }
 }

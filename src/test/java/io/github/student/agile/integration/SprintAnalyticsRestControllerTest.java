@@ -39,6 +39,20 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import io.github.student.agile.exception.definition.InvalidDateRangeException;
+import org.mockito.ArgumentCaptor;
+
+import java.time.Instant;
+
+import static io.github.student.agile.exception.dictionary.ExceptionMessages.INVALID_DATE_RANGE;
+import static org.hamcrest.Matchers.containsString;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+
 @WebMvcTest(controllers = SprintAnalyticsRestController.class)
 @Import({SecurityConfig.class, JwtAuthConverter.class, GlobalExceptionHandler.class})
 public class SprintAnalyticsRestControllerTest {
@@ -270,7 +284,7 @@ public class SprintAnalyticsRestControllerTest {
                         .build()
         );
 
-        when(sprintAnalyticsService.getProjectSprintsComparison(10)).thenReturn(items);
+        when(sprintAnalyticsService.getProjectSprintsComparison(10, null, null)).thenReturn(items);
 
         mvc.perform(get("/api/analytics/projects/10/sprints").with(jwt()))
                 .andExpect(status().isOk())
@@ -293,7 +307,7 @@ public class SprintAnalyticsRestControllerTest {
 
     @Test
     public void getProjectSprintsComparison_returns404WhenProjectDoesNotExist() throws Exception {
-        when(sprintAnalyticsService.getProjectSprintsComparison(999))
+        when(sprintAnalyticsService.getProjectSprintsComparison(999, null, null))
                 .thenThrow(new ResourceNotFoundException(PROJECT_DOES_NOT_EXISTS));
 
         mvc.perform(get("/api/analytics/projects/999/sprints").with(jwt()))
@@ -308,7 +322,7 @@ public class SprintAnalyticsRestControllerTest {
 
     @Test
     public void getProjectSprintsComparison_returns403WhenUserHasNoProjectAccess() throws Exception {
-        when(sprintAnalyticsService.getProjectSprintsComparison(50))
+        when(sprintAnalyticsService.getProjectSprintsComparison(50,null,null))
                 .thenThrow(new ProjectAccessDeniedException(ACTION_NOT_ALLOWED));
 
         mvc.perform(get("/api/analytics/projects/50/sprints").with(jwt()))
@@ -341,6 +355,105 @@ public class SprintAnalyticsRestControllerTest {
                 .andExpect(jsonPath("$.status", is(400)))
                 .andExpect(jsonPath("$.error", is("Bad Request")))
                 .andExpect(jsonPath("$.path", is("/api/analytics/projects/not-a-number/sprints")))
+                .andExpect(jsonPath("$.trace").doesNotExist());
+    }
+    @Test
+    public void getProjectSprintsComparison_parsesDateOnlyParamsAndPassesInclusiveRangeToService() throws Exception {
+        when(sprintAnalyticsService.getProjectSprintsComparison(eq(10), any(), any())).thenReturn(List.of());
+
+        mvc.perform(get("/api/analytics/projects/10/sprints")
+                        .param("from", "2026-11-01")
+                        .param("to", "2026-11-05")
+                        .with(jwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(0)));
+
+        ArgumentCaptor<ZonedDateTime> fromCaptor = ArgumentCaptor.forClass(ZonedDateTime.class);
+        ArgumentCaptor<ZonedDateTime> toCaptor = ArgumentCaptor.forClass(ZonedDateTime.class);
+        verify(sprintAnalyticsService).getProjectSprintsComparison(eq(10), fromCaptor.capture(), toCaptor.capture());
+        assertEquals(Instant.parse("2026-11-01T00:00:00Z"), fromCaptor.getValue().toInstant());
+        assertEquals(Instant.parse("2026-11-05T23:59:59.999999999Z"), toCaptor.getValue().toInstant());
+    }
+
+    @Test
+    public void getProjectSprintsComparison_parsesDateTimeParamsWithoutShiftingToEndOfDay() throws Exception {
+        when(sprintAnalyticsService.getProjectSprintsComparison(eq(10), any(), any())).thenReturn(List.of());
+
+        mvc.perform(get("/api/analytics/projects/10/sprints")
+                        .param("from", "2026-11-01T09:00:00Z")
+                        .param("to", "2026-11-05T17:00:00+01:00")
+                        .with(jwt()))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<ZonedDateTime> fromCaptor = ArgumentCaptor.forClass(ZonedDateTime.class);
+        ArgumentCaptor<ZonedDateTime> toCaptor = ArgumentCaptor.forClass(ZonedDateTime.class);
+        verify(sprintAnalyticsService).getProjectSprintsComparison(eq(10), fromCaptor.capture(), toCaptor.capture());
+        assertEquals(Instant.parse("2026-11-01T09:00:00Z"), fromCaptor.getValue().toInstant());
+        assertEquals(Instant.parse("2026-11-05T16:00:00Z"), toCaptor.getValue().toInstant());
+    }
+
+    @Test
+    public void getProjectSprintsComparison_acceptsOnlyOneBoundAndTreatsBlankParamsAsMissing() throws Exception {
+        when(sprintAnalyticsService.getProjectSprintsComparison(eq(10), any(), any())).thenReturn(List.of());
+
+        mvc.perform(get("/api/analytics/projects/10/sprints").param("from", "2026-11-01").with(jwt()))
+                .andExpect(status().isOk());
+        mvc.perform(get("/api/analytics/projects/10/sprints").param("from", "").param("to", " ").with(jwt()))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<ZonedDateTime> fromCaptor = ArgumentCaptor.forClass(ZonedDateTime.class);
+        ArgumentCaptor<ZonedDateTime> toCaptor = ArgumentCaptor.forClass(ZonedDateTime.class);
+        verify(sprintAnalyticsService, org.mockito.Mockito.times(2))
+                .getProjectSprintsComparison(eq(10), fromCaptor.capture(), toCaptor.capture());
+        assertEquals(Instant.parse("2026-11-01T00:00:00Z"), fromCaptor.getAllValues().get(0).toInstant());
+        assertNull(toCaptor.getAllValues().get(0));
+        assertNull(fromCaptor.getAllValues().get(1));
+        assertNull(toCaptor.getAllValues().get(1));
+    }
+
+    @Test
+    public void getProjectSprintsComparison_returns400ForMalformedFromDateWithoutCallingService() throws Exception {
+        mvc.perform(get("/api/analytics/projects/10/sprints").param("from", "not-a-date").with(jwt()))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.status", is(400)))
+                .andExpect(jsonPath("$.error", is("Bad Request")))
+                .andExpect(jsonPath("$.message", containsString("'from'")))
+                .andExpect(jsonPath("$.path", is("/api/analytics/projects/10/sprints")))
+                .andExpect(jsonPath("$.trace").doesNotExist());
+
+        verifyNoInteractions(sprintAnalyticsService);
+    }
+
+    @Test
+    public void getProjectSprintsComparison_returns400ForMalformedToDate() throws Exception {
+        mvc.perform(get("/api/analytics/projects/10/sprints")
+                        .param("from", "2026-11-01")
+                        .param("to", "2026-02-30")
+                        .with(jwt()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status", is(400)))
+                .andExpect(jsonPath("$.message", containsString("'to'")))
+                .andExpect(jsonPath("$.trace").doesNotExist());
+
+        verifyNoInteractions(sprintAnalyticsService);
+    }
+
+    @Test
+    public void getProjectSprintsComparison_returns400WhenFromIsAfterTo() throws Exception {
+        when(sprintAnalyticsService.getProjectSprintsComparison(eq(10), any(), any()))
+                .thenThrow(new InvalidDateRangeException(INVALID_DATE_RANGE));
+
+        mvc.perform(get("/api/analytics/projects/10/sprints")
+                        .param("from", "2026-11-10")
+                        .param("to", "2026-11-01")
+                        .with(jwt()))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.status", is(400)))
+                .andExpect(jsonPath("$.error", is("Bad Request")))
+                .andExpect(jsonPath("$.message", is(INVALID_DATE_RANGE)))
+                .andExpect(jsonPath("$.path", is("/api/analytics/projects/10/sprints")))
                 .andExpect(jsonPath("$.trace").doesNotExist());
     }
 }

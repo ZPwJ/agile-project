@@ -12,30 +12,30 @@ import java.time.ZonedDateTime;
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
-@Schema(description = "Podsumowanie pojedynczego sprintu w zestawieniu porównawczym projektu")
+@Schema(description = "Summary of a single sprint in the project comparison report")
 public class SprintComparisonItemDTO {
 
-    @Schema(description = "Identyfikator projektu", example = "10")
+    @Schema(description = "Project identifier", example = "10")
     private Integer projectId;
 
-    @Schema(description = "Identyfikator sprintu", example = "1")
+    @Schema(description = "Sprint identifier", example = "1")
     private Integer sprintId;
 
-    @Schema(description = "Nazwa sprintu", example = "Sprint 1")
+    @Schema(description = "Sprint name", example = "Sprint 1")
     private String sprintName;
 
-    @Schema(description = "Data rozpoczęcia sprintu", nullable = true)
+    @Schema(description = "Sprint start timestamp", nullable = true)
     private ZonedDateTime startDate;
 
-    @Schema(description = "Data zakończenia sprintu (null dla sprintu aktywnego)", nullable = true)
+    @Schema(description = "Sprint end timestamp (null for an active sprint)", nullable = true)
     private ZonedDateTime endDate;
 
-    @Schema(description = "Liczba ukończonych zadań (status DONE)", example = "4")
+    @Schema(description = "Number of completed issues (DONE status)", example = "4")
     private int completedIssueCount;
 
-    @Schema(description = "Liczba nieukończonych zadań w sprincie", example = "1")
+    @Schema(description = "Number of uncompleted issues in the sprint", example = "1")
     private int uncompletedIssueCount;
 
-    @Schema(description = "Velocity sprintu w Story Points (0, gdy brak ukończonych zadań lub estymacji)", example = "13")
+    @Schema(description = "Sprint velocity in Story Points (0 when there are no completed issues or estimations)", example = "13")
     private int velocity;
 }

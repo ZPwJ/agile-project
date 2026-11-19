@@ -13,27 +13,27 @@ import java.util.List;
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
-@Schema(description = "Dane do wykresu Burnup sprintu prezentujące przyrost pracy ukończonej względem całkowitego zakresu sprintu")
+@Schema(description = "Sprint Burnup chart data showing cumulative completed work relative to total sprint scope")
 public class BurnupChartDTO {
 
-    @Schema(description = "Identyfikator sprintu", example = "1")
+    @Schema(description = "Sprint identifier", example = "1")
     private Integer sprintId;
 
-    @Schema(description = "Nazwa sprintu", example = "Sprint 1")
+    @Schema(description = "Sprint name", example = "Sprint 1")
     private String sprintName;
 
-    @Schema(description = "Identyfikator projektu", example = "10")
+    @Schema(description = "Project identifier", example = "10")
     private Integer projectId;
 
-    @Schema(description = "Data rozpoczęcia sprintu", nullable = true)
+    @Schema(description = "Sprint start timestamp", nullable = true)
     private ZonedDateTime startDate;
 
-    @Schema(description = "Data zakończenia sprintu (null dla sprintu aktywnego)", nullable = true)
+    @Schema(description = "Sprint end timestamp (null for an active sprint)", nullable = true)
     private ZonedDateTime endDate;
 
-    @Schema(description = "Jednostka miary dla wszystkich wartości serii wykresu", example = "STORY_POINTS")
+    @Schema(description = "Measurement unit for all chart series values", example = "STORY_POINTS")
     private String unit;
 
-    @Schema(description = "Chronologicznie uporządkowana seria punktów dziennych wykresu Burnup")
+    @Schema(description = "Chronologically ordered daily series of Burnup chart points")
     private List<BurnupPointDTO> points;
 }

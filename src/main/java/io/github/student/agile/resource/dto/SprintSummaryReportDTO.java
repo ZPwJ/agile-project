@@ -12,39 +12,39 @@ import java.time.ZonedDateTime;
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
-@Schema(description = "Raport podsumowujący pojedynczy sprint")
+@Schema(description = "Summary report for a single sprint")
 public class SprintSummaryReportDTO {
 
-    @Schema(description = "Identyfikator sprintu", example = "1")
+    @Schema(description = "Sprint identifier", example = "1")
     private Integer sprintId;
 
-    @Schema(description = "Nazwa sprintu", example = "Sprint 1")
+    @Schema(description = "Sprint name", example = "Sprint 1")
     private String sprintName;
 
-    @Schema(description = "Identyfikator projektu", example = "10")
+    @Schema(description = "Project identifier", example = "10")
     private Integer projectId;
 
-    @Schema(description = "Data rozpoczęcia sprintu", nullable = true)
+    @Schema(description = "Sprint start timestamp", nullable = true)
     private ZonedDateTime startDate;
 
-    @Schema(description = "Data zakończenia sprintu (null dla sprintu aktywnego lub nieuruchomionego)", nullable = true)
+    @Schema(description = "Sprint end timestamp (null for an active or unstarted sprint)", nullable = true)
     private ZonedDateTime endDate;
 
-    @Schema(description = "Liczba zadań w sprincie w momencie jego rozpoczęcia", example = "5")
+    @Schema(description = "Number of issues in the sprint at the time it started", example = "5")
     private int initialIssueCount;
 
-    @Schema(description = "Liczba zadań ukończonych (status DONE)", example = "3")
+    @Schema(description = "Number of completed issues (DONE status)", example = "3")
     private int completedIssueCount;
 
-    @Schema(description = "Liczba zadań nieukończonych w sprincie", example = "2")
+    @Schema(description = "Number of uncompleted issues in the sprint", example = "2")
     private int uncompletedIssueCount;
 
-    @Schema(description = "Velocity sprintu (suma estymacji zadań ukończonych; brak estymacji liczony jako 0)", example = "13")
+    @Schema(description = "Sprint velocity (sum of estimations of completed issues; missing estimation counts as 0)", example = "13")
     private int velocity;
 
-    @Schema(description = "Suma estymacji zadań nieukończonych (brak estymacji liczony jako 0)", example = "8")
+    @Schema(description = "Sum of estimations of uncompleted issues (missing estimation counts as 0)", example = "8")
     private int uncompletedEstimationSum;
 
-    @Schema(description = "Jednostka estymacji używana w metrykach", example = "STORY_POINTS")
+    @Schema(description = "Estimation unit used in metrics", example = "STORY_POINTS")
     private String estimationUnit;
 }

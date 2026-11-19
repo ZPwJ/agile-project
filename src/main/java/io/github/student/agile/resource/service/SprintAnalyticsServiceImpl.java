@@ -7,6 +7,8 @@ import io.github.student.agile.resource.domain.Sprint;
 import io.github.student.agile.resource.domain.SprintIssueEvent;
 import io.github.student.agile.resource.domain.dictionary.IssueStatusID;
 import io.github.student.agile.resource.domain.dictionary.SprintEventType;
+import io.github.student.agile.resource.dto.BurndownChartDTO;
+import io.github.student.agile.resource.dto.BurndownPointDTO;
 import io.github.student.agile.resource.dto.BurnupChartDTO;
 import io.github.student.agile.resource.dto.BurnupPointDTO;
 import io.github.student.agile.resource.dto.SprintComparisonItemDTO;
@@ -94,17 +96,44 @@ public class SprintAnalyticsServiceImpl implements SprintAnalyticsService {
     }
 
     @Override
+    public BurndownChartDTO getBurndownChart(Integer sprintId) {
+        Sprint sprint = findSprintAndVerifyAccess(sprintId);
+        Integer projectId = sprint.getProject().getId();
+
+        List<SprintIssueEvent> sprintEvents = loadSprintEvents(sprintId);
+        List<BurndownPointDTO> points = buildDailySprintMetrics(sprint, sprintEvents).stream()
+                .map(metric -> BurndownPointDTO.builder()
+                        .date(metric.date())
+                        .remainingWork(Math.max(0, metric.totalScope() - metric.completedWork()))
+                        .unit(DEFAULT_ESTIMATION_UNIT)
+                        .build())
+                .toList();
+
+        return BurndownChartDTO.builder()
+                .sprintId(sprint.getId())
+                .sprintName(sprint.getName())
+                .projectId(projectId)
+                .startDate(sprint.getStartDate())
+                .endDate(sprint.getEndDate())
+                .unit(DEFAULT_ESTIMATION_UNIT)
+                .points(points)
+                .build();
+    }
+
+    @Override
     public BurnupChartDTO getBurnupChart(Integer sprintId) {
         Sprint sprint = findSprintAndVerifyAccess(sprintId);
         Integer projectId = sprint.getProject().getId();
 
-        List<SprintIssueEvent> sprintEvents = sprintIssueEventRepository
-                .findAllBySprintIdOrderByOccurredAtAscIdAsc(sprintId)
-                .stream()
-                .filter(event -> event != null && sprintId.equals(event.getSprintId()))
+        List<SprintIssueEvent> sprintEvents = loadSprintEvents(sprintId);
+        List<BurnupPointDTO> points = buildDailySprintMetrics(sprint, sprintEvents).stream()
+                .map(metric -> BurnupPointDTO.builder()
+                        .date(metric.date())
+                        .completedWork(metric.completedWork())
+                        .totalScope(metric.totalScope())
+                        .unit(DEFAULT_ESTIMATION_UNIT)
+                        .build())
                 .toList();
-
-        List<BurnupPointDTO> points = buildBurnupPoints(sprint, sprintEvents);
 
         return BurnupChartDTO.builder()
                 .sprintId(sprint.getId())
@@ -237,9 +266,17 @@ public class SprintAnalyticsServiceImpl implements SprintAnalyticsService {
         return startsBeforeRangeEnd && endsAfterRangeStart;
     }
 
-    private List<BurnupPointDTO> buildBurnupPoints(Sprint sprint, List<SprintIssueEvent> events) {
+    private List<SprintIssueEvent> loadSprintEvents(Integer sprintId) {
+        return sprintIssueEventRepository
+                .findAllBySprintIdOrderByOccurredAtAscIdAsc(sprintId)
+                .stream()
+                .filter(event -> event != null && sprintId.equals(event.getSprintId()))
+                .toList();
+    }
+
+    private List<DailySprintMetric> buildDailySprintMetrics(Sprint sprint, List<SprintIssueEvent> events) {
         if (events.isEmpty()) {
-            return buildFallbackBurnupPoints(sprint);
+            return buildFallbackDailyMetrics(sprint);
         }
 
         List<SprintIssueEvent> timelineEvents = new ArrayList<>();
@@ -261,7 +298,7 @@ public class SprintAnalyticsServiceImpl implements SprintAnalyticsService {
         LocalDate endDay = resolveEndDay(sprint, timelineEvents, stopEventDay, startDay);
 
         Map<Integer, IssueSnapshot> scope = new LinkedHashMap<>();
-        List<BurnupPointDTO> points = new ArrayList<>();
+        List<DailySprintMetric> metrics = new ArrayList<>();
         int eventIndex = 0;
 
         for (LocalDate day = startDay; !day.isAfter(endDay); day = day.plusDays(1)) {
@@ -283,18 +320,13 @@ public class SprintAnalyticsServiceImpl implements SprintAnalyticsService {
                     .mapToInt(snapshot -> sprintVelocityCalculator.safeEstimation(snapshot.estimation()))
                     .sum();
 
-            points.add(BurnupPointDTO.builder()
-                    .date(day)
-                    .completedWork(Math.max(0, completedWork))
-                    .totalScope(Math.max(0, totalScope))
-                    .unit(DEFAULT_ESTIMATION_UNIT)
-                    .build());
+            metrics.add(new DailySprintMetric(day, Math.max(0, completedWork), Math.max(0, totalScope)));
         }
 
-        return points;
+        return metrics;
     }
 
-    private List<BurnupPointDTO> buildFallbackBurnupPoints(Sprint sprint) {
+    private List<DailySprintMetric> buildFallbackDailyMetrics(Sprint sprint) {
         if (sprint.getStartDate() == null) {
             return Collections.emptyList();
         }
@@ -312,12 +344,11 @@ public class SprintAnalyticsServiceImpl implements SprintAnalyticsService {
         int completedWork = sprintVelocityCalculator.calculateVelocity(sprintId, sprintIssues);
 
         ZonedDateTime pointTimestamp = sprint.getEndDate() != null ? sprint.getEndDate() : sprint.getStartDate();
-        return List.of(BurnupPointDTO.builder()
-                .date(toUtcDate(pointTimestamp))
-                .completedWork(Math.max(0, completedWork))
-                .totalScope(Math.max(0, totalScope))
-                .unit(DEFAULT_ESTIMATION_UNIT)
-                .build());
+        return List.of(new DailySprintMetric(
+                toUtcDate(pointTimestamp),
+                Math.max(0, completedWork),
+                Math.max(0, totalScope)
+        ));
     }
 
     private LocalDate resolveStartDay(Sprint sprint, List<SprintIssueEvent> timelineEvents, LocalDate stopEventDay) {
@@ -408,5 +439,8 @@ public class SprintAnalyticsServiceImpl implements SprintAnalyticsService {
     }
 
     private record IssueSnapshot(Integer statusId, Integer estimation) {
+    }
+
+    private record DailySprintMetric(LocalDate date, int completedWork, int totalScope) {
     }
 }

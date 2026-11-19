@@ -10,6 +10,8 @@ import io.github.student.agile.resource.domain.Sprint;
 import io.github.student.agile.resource.domain.SprintIssueEvent;
 import io.github.student.agile.resource.domain.dictionary.IssueStatusID;
 import io.github.student.agile.resource.domain.dictionary.SprintEventType;
+import io.github.student.agile.resource.dto.BurndownChartDTO;
+import io.github.student.agile.resource.dto.BurndownPointDTO;
 import io.github.student.agile.resource.dto.BurnupChartDTO;
 import io.github.student.agile.resource.dto.BurnupPointDTO;
 import io.github.student.agile.resource.dto.SprintComparisonItemDTO;
@@ -824,6 +826,160 @@ public class SprintAnalyticsServiceImplTest {
                 () -> sprintAnalyticsService.exportProjectSprintsComparisonCsv(10, RANGE_BASE.plusDays(1), RANGE_BASE)
         );
         verifyNoInteractions(sprintRepository, userService, issueRepository, sprintIssueEventRepository);
+    }
+
+    @Test
+    public void getBurndownChart_tracksChronologicalRemainingWorkWithScopeChanges() {
+        Integer projectId = 10;
+        Integer sprintId = 300;
+        ZonedDateTime startDate = ZonedDateTime.of(2026, 11, 1, 9, 0, 0, 0, ZoneOffset.UTC);
+        ZonedDateTime endDate = ZonedDateTime.of(2026, 11, 5, 17, 0, 0, 0, ZoneOffset.UTC);
+
+        Sprint sprint = Sprint.builder()
+                .id(sprintId)
+                .name("Burndown Sprint")
+                .project(Project.builder().id(projectId).build())
+                .startDate(startDate)
+                .endDate(endDate)
+                .isDone(true)
+                .build();
+
+        // Day 1 (Nov 1): issue 1 (5 pts, TO_DO), issue 2 (3 pts, TO_DO) -> remaining=8
+        // Day 2 (Nov 2): issue 3 added (8 pts, TO_DO), issue 1 -> DONE (-5 pts) -> remaining=11
+        // Day 3 (Nov 3): issue 2 removed (-3 pts) -> remaining=8
+        // Day 4 (Nov 4): issue 3 estimation 8 -> 13 (+5 pts) -> remaining=13
+        // Day 5 (Nov 5): issue 3 -> DONE (-13 pts), SPRINT_STOPPED -> remaining=0
+        List<SprintIssueEvent> events = List.of(
+                event(sprintId, 1, SprintEventType.SPRINT_STARTED, IssueStatusID.TO_DO.getStatusID(), 5, startDate),
+                event(sprintId, 2, SprintEventType.SPRINT_STARTED, IssueStatusID.TO_DO.getStatusID(), 3, startDate),
+                event(sprintId, 3, SprintEventType.ADDED_TO_SPRINT, IssueStatusID.TO_DO.getStatusID(), 8, startDate.plusDays(1)),
+                event(sprintId, 1, SprintEventType.STATUS_CHANGED, IssueStatusID.DONE.getStatusID(), 5, startDate.plusDays(1).plusHours(2)),
+                event(sprintId, 2, SprintEventType.REMOVED_FROM_SPRINT, IssueStatusID.TO_DO.getStatusID(), 3, startDate.plusDays(2)),
+                event(sprintId, 3, SprintEventType.ESTIMATION_CHANGED, IssueStatusID.IN_PROGRESS.getStatusID(), 13, startDate.plusDays(3)),
+                event(sprintId, 3, SprintEventType.STATUS_CHANGED, IssueStatusID.DONE.getStatusID(), 13, startDate.plusDays(4)),
+                event(sprintId, null, SprintEventType.SPRINT_STOPPED, null, null, endDate)
+        );
+
+        when(sprintRepository.findById(sprintId)).thenReturn(Optional.of(sprint));
+        when(sprintIssueEventRepository.findAllBySprintIdOrderByOccurredAtAscIdAsc(sprintId)).thenReturn(events);
+
+        BurndownChartDTO chart = sprintAnalyticsService.getBurndownChart(sprintId);
+
+        verify(userService).verifyProjectAccess(projectId);
+        assertEquals(sprintId, chart.getSprintId());
+        assertEquals("Burndown Sprint", chart.getSprintName());
+        assertEquals(projectId, chart.getProjectId());
+        assertEquals(startDate, chart.getStartDate());
+        assertEquals(endDate, chart.getEndDate());
+        assertEquals("STORY_POINTS", chart.getUnit());
+        assertEquals(5, chart.getPoints().size());
+
+        assertBurndownPoint(chart.getPoints().get(0), LocalDate.of(2026, 11, 1), 8);
+        assertBurndownPoint(chart.getPoints().get(1), LocalDate.of(2026, 11, 2), 11);
+        assertBurndownPoint(chart.getPoints().get(2), LocalDate.of(2026, 11, 3), 8);
+        assertBurndownPoint(chart.getPoints().get(3), LocalDate.of(2026, 11, 4), 13);
+        assertBurndownPoint(chart.getPoints().get(4), LocalDate.of(2026, 11, 5), 0);
+    }
+
+    @Test
+    public void getBurndownChart_handlesNullOrNegativeEstimationsAndGuaranteesNonNegativeRemainingWork() {
+        Integer sprintId = 301;
+        ZonedDateTime startDate = ZonedDateTime.of(2026, 11, 1, 9, 0, 0, 0, ZoneOffset.UTC);
+        ZonedDateTime endDate = ZonedDateTime.of(2026, 11, 2, 17, 0, 0, 0, ZoneOffset.UTC);
+
+        Sprint sprint = Sprint.builder()
+                .id(sprintId)
+                .name("Unestimated Sprint")
+                .project(Project.builder().id(10).build())
+                .startDate(startDate)
+                .endDate(endDate)
+                .isDone(true)
+                .build();
+
+        List<SprintIssueEvent> events = List.of(
+                event(sprintId, 1, SprintEventType.SPRINT_STARTED, IssueStatusID.TO_DO.getStatusID(), null, startDate),
+                event(sprintId, 2, SprintEventType.SPRINT_STARTED, IssueStatusID.TO_DO.getStatusID(), -5, startDate),
+                event(sprintId, 1, SprintEventType.STATUS_CHANGED, IssueStatusID.DONE.getStatusID(), null, startDate.plusDays(1)),
+                event(sprintId, null, SprintEventType.SPRINT_STOPPED, null, null, endDate)
+        );
+
+        when(sprintRepository.findById(sprintId)).thenReturn(Optional.of(sprint));
+        when(sprintIssueEventRepository.findAllBySprintIdOrderByOccurredAtAscIdAsc(sprintId)).thenReturn(events);
+
+        BurndownChartDTO chart = sprintAnalyticsService.getBurndownChart(sprintId);
+
+        assertEquals(2, chart.getPoints().size());
+        assertBurndownPoint(chart.getPoints().get(0), LocalDate.of(2026, 11, 1), 0);
+        assertBurndownPoint(chart.getPoints().get(1), LocalDate.of(2026, 11, 2), 0);
+    }
+
+    @Test
+    public void getBurndownChart_handlesLegacySprintWithoutEventsAndUnstartedSprint() {
+        Integer legacySprintId = 302;
+        Integer unstartedSprintId = 303;
+        ZonedDateTime startDate = ZonedDateTime.of(2026, 11, 1, 9, 0, 0, 0, ZoneOffset.UTC);
+
+        Sprint legacySprint = Sprint.builder()
+                .id(legacySprintId)
+                .name("Legacy Burndown")
+                .project(Project.builder().id(10).build())
+                .startDate(startDate)
+                .build();
+        Sprint unstartedSprint = Sprint.builder()
+                .id(unstartedSprintId)
+                .name("Planned Burndown")
+                .project(Project.builder().id(10).build())
+                .startDate(null)
+                .build();
+
+        Issue doneIssue = Issue.builder()
+                .id(1)
+                .sprint(legacySprint)
+                .issueStatus(new IssueStatus(IssueStatusID.DONE.getStatusID(), null))
+                .estimation(5)
+                .build();
+        Issue todoIssue = Issue.builder()
+                .id(2)
+                .sprint(legacySprint)
+                .issueStatus(new IssueStatus(IssueStatusID.TO_DO.getStatusID(), null))
+                .estimation(3)
+                .build();
+
+        when(sprintRepository.findById(legacySprintId)).thenReturn(Optional.of(legacySprint));
+        when(sprintIssueEventRepository.findAllBySprintIdOrderByOccurredAtAscIdAsc(legacySprintId))
+                .thenReturn(Collections.emptyList());
+        when(issueRepository.findAllBySprintId(legacySprintId)).thenReturn(List.of(doneIssue, todoIssue));
+
+        when(sprintRepository.findById(unstartedSprintId)).thenReturn(Optional.of(unstartedSprint));
+        when(sprintIssueEventRepository.findAllBySprintIdOrderByOccurredAtAscIdAsc(unstartedSprintId))
+                .thenReturn(Collections.emptyList());
+
+        BurndownChartDTO legacyChart = sprintAnalyticsService.getBurndownChart(legacySprintId);
+        BurndownChartDTO unstartedChart = sprintAnalyticsService.getBurndownChart(unstartedSprintId);
+
+        assertEquals(1, legacyChart.getPoints().size());
+        assertBurndownPoint(legacyChart.getPoints().get(0), LocalDate.of(2026, 11, 1), 3);
+        assertTrue(unstartedChart.getPoints().isEmpty());
+    }
+
+    @Test
+    public void getBurndownChart_throwsOnNullMissingAndUnauthorizedSprint() {
+        assertThrows(NullIdentifierException.class, () -> sprintAnalyticsService.getBurndownChart(null));
+
+        when(sprintRepository.findById(999)).thenReturn(Optional.empty());
+        assertThrows(ResourceNotFoundException.class, () -> sprintAnalyticsService.getBurndownChart(999));
+
+        Sprint unauthorizedSprint = Sprint.builder().id(304).project(Project.builder().id(50).build()).build();
+        when(sprintRepository.findById(304)).thenReturn(Optional.of(unauthorizedSprint));
+        doThrow(new ProjectAccessDeniedException(ACTION_NOT_ALLOWED)).when(userService).verifyProjectAccess(50);
+
+        assertThrows(ProjectAccessDeniedException.class, () -> sprintAnalyticsService.getBurndownChart(304));
+    }
+
+    private void assertBurndownPoint(BurndownPointDTO point, LocalDate expectedDate, int expectedRemaining) {
+        assertEquals(expectedDate, point.getDate());
+        assertEquals(expectedRemaining, point.getRemainingWork());
+        assertEquals("STORY_POINTS", point.getUnit());
     }
 
     private void assertPoint(BurnupPointDTO point, LocalDate expectedDate, int expectedCompleted, int expectedScope) {

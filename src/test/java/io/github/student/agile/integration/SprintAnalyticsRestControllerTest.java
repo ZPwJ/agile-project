@@ -4,6 +4,8 @@ import io.github.student.agile.exception.definition.ProjectAccessDeniedException
 import io.github.student.agile.exception.definition.ResourceNotFoundException;
 import io.github.student.agile.exception.handler.GlobalExceptionHandler;
 import io.github.student.agile.resource.controller.SprintAnalyticsRestController;
+import io.github.student.agile.resource.dto.BurndownChartDTO;
+import io.github.student.agile.resource.dto.BurndownPointDTO;
 import io.github.student.agile.resource.dto.BurnupChartDTO;
 import io.github.student.agile.resource.dto.BurnupPointDTO;
 import io.github.student.agile.resource.dto.SprintComparisonItemDTO;
@@ -545,5 +547,68 @@ public class SprintAnalyticsRestControllerTest {
                 .andExpect(status().isNotFound())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.status", is(404)));
+    }
+
+    @Test
+    public void getBurndownChart_returns200WithChronologicalPoints() throws Exception {
+        ZonedDateTime start = ZonedDateTime.of(2026, 11, 1, 9, 0, 0, 0, ZoneOffset.UTC);
+        ZonedDateTime end = ZonedDateTime.of(2026, 11, 2, 17, 0, 0, 0, ZoneOffset.UTC);
+        BurndownChartDTO chart = BurndownChartDTO.builder()
+                .sprintId(1)
+                .sprintName("Sprint 1")
+                .projectId(10)
+                .startDate(start)
+                .endDate(end)
+                .unit("STORY_POINTS")
+                .points(List.of(
+                        BurndownPointDTO.builder().date(LocalDate.of(2026, 11, 1)).remainingWork(13).unit("STORY_POINTS").build(),
+                        BurndownPointDTO.builder().date(LocalDate.of(2026, 11, 2)).remainingWork(5).unit("STORY_POINTS").build()
+                ))
+                .build();
+
+        when(sprintAnalyticsService.getBurndownChart(1)).thenReturn(chart);
+
+        mvc.perform(get("/api/analytics/sprints/1/burndown").with(jwt()))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.sprintId", is(1)))
+                .andExpect(jsonPath("$.sprintName", is("Sprint 1")))
+                .andExpect(jsonPath("$.projectId", is(10)))
+                .andExpect(jsonPath("$.unit", is("STORY_POINTS")))
+                .andExpect(jsonPath("$.points", hasSize(2)))
+                .andExpect(jsonPath("$.points[0].date", is("2026-11-01")))
+                .andExpect(jsonPath("$.points[0].remainingWork", is(13)))
+                .andExpect(jsonPath("$.points[0].unit", is("STORY_POINTS")))
+                .andExpect(jsonPath("$.points[1].date", is("2026-11-02")))
+                .andExpect(jsonPath("$.points[1].remainingWork", is(5)));
+    }
+
+    @Test
+    public void getBurndownChart_returns400_401_403_404Properly() throws Exception {
+        mvc.perform(get("/api/analytics/sprints/not-a-number/burndown").with(jwt()))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.status", is(400)))
+                .andExpect(jsonPath("$.trace").doesNotExist());
+
+        mvc.perform(get("/api/analytics/sprints/1/burndown"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.status", is(401)));
+
+        when(sprintAnalyticsService.getBurndownChart(5))
+                .thenThrow(new ProjectAccessDeniedException(ACTION_NOT_ALLOWED));
+        mvc.perform(get("/api/analytics/sprints/5/burndown").with(jwt()))
+                .andExpect(status().isForbidden())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.status", is(403)));
+
+        when(sprintAnalyticsService.getBurndownChart(999))
+                .thenThrow(new ResourceNotFoundException(SPRINT_DOES_NOT_EXISTS));
+        mvc.perform(get("/api/analytics/sprints/999/burndown").with(jwt()))
+                .andExpect(status().isNotFound())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.status", is(404)))
+                .andExpect(jsonPath("$.message", is(SPRINT_DOES_NOT_EXISTS)));
     }
 }

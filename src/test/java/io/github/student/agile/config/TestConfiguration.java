@@ -10,7 +10,8 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 @SpringBootConfiguration
 @EnableJpaRepositories({
         "io.github.student.agile.resource.repository",
-        "io.github.student.agile.resource.analytics.charts"
+        "io.github.student.agile.resource.analytics.charts",
+        "io.github.student.agile.resource.analytics.reports"
 })
 @ComponentScan(value = {"io.github.student.agile.resource"})
 @AutoConfigureDataJpa

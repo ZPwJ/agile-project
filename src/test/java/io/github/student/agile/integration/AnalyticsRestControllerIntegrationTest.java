@@ -69,7 +69,7 @@ public class AnalyticsRestControllerIntegrationTest {
 
     private static final String ANALYTICS_BASE_URL = "/api/analytics";
     private static final String CSV_HEADER =
-            "sprintID,sprintName,startedAt,endedAt,historyAvailable,completedIssueCount,uncompletedIssueCount,velocity\r\n";
+            "projectID,sprintID,sprintName,startedAt,endedAt,historyAvailable,completedIssueCount,uncompletedIssueCount,velocity\r\n";
 
     @Autowired
     private MockMvc mvc;
@@ -368,8 +368,8 @@ public class AnalyticsRestControllerIntegrationTest {
                 .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION,
                         "attachment; filename=\"project-%d-sprints.csv\"".formatted(project.getId())))
                 .andExpect(content().string(CSV_HEADER
-                        + october.getId() + ",\"October, part 1\",2026-10-01T07:00:00Z,2026-10-14T15:00:00Z,true,0,0,0\r\n"
-                        + turnOfMonth.getId() + ",Turn of month,2026-10-28T08:00:00Z,2026-11-10T16:00:00Z,true,0,0,0\r\n"));
+                        + project.getId() + "," + october.getId() + ",\"October, part 1\",2026-10-01T07:00:00Z,2026-10-14T15:00:00Z,true,0,0,0\r\n"
+                        + project.getId() + "," + turnOfMonth.getId() + ",Turn of month,2026-10-28T08:00:00Z,2026-11-10T16:00:00Z,true,0,0,0\r\n"));
     }
 
     @Test
@@ -384,7 +384,7 @@ public class AnalyticsRestControllerIntegrationTest {
 
         mvc.perform(get(ANALYTICS_BASE_URL + "/projects/{id}/sprints/export.csv", project.getId()))
                 .andExpect(status().isOk())
-                .andExpect(content().string(startsWith(CSV_HEADER + sprint.getId() + "," + SPRINT_NAME + ",")))
+                .andExpect(content().string(startsWith(CSV_HEADER + project.getId() + "," + sprint.getId() + "," + SPRINT_NAME + ",")))
                 .andExpect(content().string(endsWith(",true,1,0,5\r\n")));
     }
 

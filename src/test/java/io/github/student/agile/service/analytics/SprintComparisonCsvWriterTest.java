@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class SprintComparisonCsvWriterTest {
 
     private static final String HEADER =
-            "sprintID,sprintName,startedAt,endedAt,historyAvailable,completedIssueCount,uncompletedIssueCount,velocity\r\n";
+            "projectID,sprintID,sprintName,startedAt,endedAt,historyAvailable,completedIssueCount,uncompletedIssueCount,velocity\r\n";
 
     private final SprintComparisonCsvWriter writer = new SprintComparisonCsvWriter();
 
@@ -39,8 +39,8 @@ class SprintComparisonCsvWriterTest {
                 true, 0, 3, 0);
 
         assertEquals(HEADER
-                        + "4,Sprint 2,2026-10-01T07:00:00Z,2026-10-14T15:00:00Z,true,5,1,18\r\n"
-                        + "5,Sprint 3,2026-10-28T08:00:00Z,2026-11-10T16:00:00Z,true,0,3,0\r\n",
+                        + "1,4,Sprint 2,2026-10-01T07:00:00Z,2026-10-14T15:00:00Z,true,5,1,18\r\n"
+                        + "1,5,Sprint 3,2026-10-28T08:00:00Z,2026-11-10T16:00:00Z,true,0,3,0\r\n",
                 writer.write(comparison(List.of(older, newer))));
     }
 
@@ -48,14 +48,14 @@ class SprintComparisonCsvWriterTest {
     void write_sprintWithoutHistory_leavesMissingDatesEmpty() {
         SprintResult withoutHistory = new SprintResult(1, "Legacy", null, null, false, 2, 0, 7);
 
-        assertEquals(HEADER + "1,Legacy,,,false,2,0,7\r\n", writer.write(comparison(List.of(withoutHistory))));
+        assertEquals(HEADER + "1,1,Legacy,,,false,2,0,7\r\n", writer.write(comparison(List.of(withoutHistory))));
     }
 
     @Test
     void write_escapesSprintName() {
         SprintResult sprint = new SprintResult(7, "Sprint \"Q4\", part 1", null, null, false, 0, 0, 0);
 
-        assertEquals(HEADER + "7,\"Sprint \"\"Q4\"\", part 1\",,,false,0,0,0\r\n", writer.write(comparison(List.of(sprint))));
+        assertEquals(HEADER + "1,7,\"Sprint \"\"Q4\"\", part 1\",,,false,0,0,0\r\n", writer.write(comparison(List.of(sprint))));
     }
 
     @ParameterizedTest(name = "[{index}] {0} -> {1}")
@@ -80,7 +80,7 @@ class SprintComparisonCsvWriterTest {
     private String escapeOf(String value) {
         String csv = writer.write(comparison(List.of(new SprintResult(1, value, null, null, false, 0, 0, 0))));
         String row = csv.substring(HEADER.length(), csv.length() - "\r\n".length());
-        return row.substring("1,".length(), row.length() - ",,,false,0,0,0".length());
+        return row.substring("1,1,".length(), row.length() - ",,,false,0,0,0".length());
     }
 
     private static SprintComparisonDTO comparison(List<SprintResult> sprints) {

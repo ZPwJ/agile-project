@@ -22,10 +22,6 @@
 - [Getting Started](#getting-started)
 - [Running Tests](#running-tests)
 - [Authentication](#authentication)
-- [API Documentation](#api-documentation)
-- [Useful URLs](#useful-urls)
-- [Project Structure](#project-structure)
-- [Security Notes](#security-notes)
 
 ## Overview
 
@@ -37,10 +33,11 @@ The application separates business API responsibilities from authentication and 
 
 - **Product Backlog Management** — Organize and maintain the work planned for a project.
 - **Sprint Planning** — Manage sprints and their associated backlog items.
-- **Kanban Board** — Visualize sprint work and track progress through a board-style interface.
+- **Kanban Board** — Track sprint work by issue status through the API (backend only, no graphical interface in this repository).
 - **Project Management** — Organize projects and their related resources.
 - **Issue Management** — Create and manage issues throughout the development workflow.
 - **Comments** — Support collaboration through issue-related discussions.
+- **Sprint Analytics** — Sprint summary report and velocity, burndown and burnup chart data, sprint comparison with date filter and CSV export. Calculation rules and API contract: [`docs/dokumentacja.md`](docs/dokumentacja.md).
 - **Role-Based Access Control** — Protect resources using a separate authentication and authorization server.
 - **REST API** — Expose application functionality through a documented HTTP API.
 - **OpenAPI Documentation** — Explore endpoints and authorize API requests using JWT bearer tokens.
@@ -90,8 +87,6 @@ The services and databases are orchestrated through Docker Compose.
 | JWT / Bearer Authentication | API request authentication |
 | OpenAPI | REST API documentation |
 
-*The stack above reflects the technologies identified in the project configuration. Additional frameworks and libraries may be present in the individual modules.*
-
 ## Prerequisites
 
 Before starting, ensure you have:
@@ -136,6 +131,16 @@ To run the stack in the background:
 docker compose -f compose.yaml up --build -d
 ```
 
+To start with demo data for the analytics reports (a project with two finished sprints, issues without
+estimation and scope changes), enable the `demo` profile:
+
+```bash
+SPRING_PROFILES_ACTIVE=prod,demo docker compose -f compose.yaml up --build
+```
+
+The demo project has ID `9001`, its sprints `9001` and `9002`, e.g. `GET /api/analytics/projects/9001/sprints`.
+Expected values are listed in `docs/dokumentacja.md` (section "Dane demonstracyjne").
+
 ### 4. Verify the services
 
 Once the services have started, the main endpoints are:
@@ -144,10 +149,10 @@ Once the services have started, the main endpoints are:
 |---|---|
 | Resource server | [http://localhost:8081](http://localhost:8081) |
 | Authentication server | [http://localhost:8080](http://localhost:8080) |
-| OpenAPI UI | [http://localhost:8081/docs.html](http://localhost:8081/docs.html) |
+| OpenAPI UI (Swagger) | [http://localhost:8081/swagger-ui/index.html](http://localhost:8081/swagger-ui/index.html) |
 | OpenAPI specification | [http://localhost:8081/api-docs](http://localhost:8081/api-docs) |
 
-The API may require authentication for protected endpoints.
+All `/api/**` endpoints require a JWT access token, see [Authentication](#authentication).
 
 ### 5. Stop the application
 
@@ -180,10 +185,10 @@ docker run --rm -v "$(pwd):/app" -v maven-repo:/root/.m2 -w /app maven:3.9-eclip
 ### Code coverage
 
 ```bash
-./mvnw verify
+./mvnw clean verify
 ```
 
-The JaCoCo report is written to `target/site/jacoco/index.html`. Coverage is measured for all production code, without exclusions, and the build fails when instruction coverage is below 75%.
+The JaCoCo report is written to `target/site/jacoco/index.html`. Coverage is measured for all production code without manual exclusions (JaCoCo skips only Lombok-generated code), and the build fails when instruction coverage is below 75%. Current result: 89.37% instruction coverage, 298 tests. Use `clean`, otherwise JaCoCo adds results of previous runs.
 
 ## Authentication
 
@@ -207,4 +212,33 @@ The imported configuration defines the following realm and client:
 
 ### Sample accounts
 
-The realm
+The realm contains two users:
+
+| User | Password | Role | Access |
+|---|---|---|---|
+| `admin@agile.local` | `admin123` | `sm` (Scrum Master) | all endpoints, including creating and editing projects |
+| `developer@agile.local` | `dev123` | `dev` | all endpoints except those restricted to `sm` |
+
+The analytics endpoints (`/api/analytics/**`) are available to both users.
+
+### Calling the API
+
+Get an access token from Keycloak (the client secret comes from `.env.example`; `jq` extracts the token from the JSON response):
+
+```bash
+TOKEN=$(curl -s http://localhost:8080/realms/agile-project/protocol/openid-connect/token \
+  -d grant_type=password \
+  -d client_id=agile-project-server \
+  -d client_secret=agile-project-secret \
+  -d username=admin@agile.local \
+  -d password=admin123 | jq -r .access_token)
+```
+
+Send it in the `Authorization` header:
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/analytics/projects/9001/sprints
+curl -H "Authorization: Bearer $TOKEN" -OJ http://localhost:8081/api/analytics/projects/9001/sprints/export.csv
+```
+
+In Swagger UI, click **Authorize** and paste the token. Tokens expire after a few minutes; request a new one when the API returns 401.

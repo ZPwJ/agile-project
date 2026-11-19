@@ -13,7 +13,7 @@ import static java.util.Objects.isNull;
 @Component
 public class SprintComparisonCsvWriter {
 
-    static final List<String> HEADER = List.of("sprintID", "sprintName", "startedAt", "endedAt", "historyAvailable",
+    static final List<String> HEADER = List.of("projectID", "sprintID", "sprintName", "startedAt", "endedAt", "historyAvailable",
             "completedIssueCount", "uncompletedIssueCount", "velocity");
 
     private static final String SEPARATOR = ",";
@@ -25,6 +25,7 @@ public class SprintComparisonCsvWriter {
         List<SprintResult> sprints = isNull(comparison.getSprints()) ? List.of() : comparison.getSprints();
         for (SprintResult sprint : sprints) {
             appendRow(csv, List.of(
+                    text(comparison.getProjectID()),
                     text(sprint.sprintID()),
                     text(sprint.sprintName()),
                     timestamp(sprint.startedAt()),

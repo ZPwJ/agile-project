@@ -88,11 +88,13 @@ public class SprintChartsRestControllerTest {
     @Autowired
     private IssueStatusHistoryRepository historyRepository;
 
+    private Project project;
     private Sprint sprint;
+    private Issue doneTask;
 
     @BeforeEach
     void setUp() {
-        Project project = projectRepository.save(createProjectEntity());
+        project = projectRepository.save(createProjectEntity());
         Backlog backlog = project.getBacklog();
         backlog.setProject(project);
         backlogRepository.save(backlog);
@@ -100,9 +102,9 @@ public class SprintChartsRestControllerTest {
         sprint = createSprint(project);
         coverHistoryFrom2020();
 
-        Issue done = createIssue(sprint, 5, IssueStatusID.DONE);
+        doneTask = createIssue(sprint, 5, IssueStatusID.DONE);
         // The only work of the sprint is finished on the third day of the axis.
-        recordChange(sprint, done, IssueStatusID.DONE, "2026-11-04T10:00:00Z");
+        recordChange(sprint, doneTask, IssueStatusID.DONE, "2026-11-04T10:00:00Z");
     }
 
     @Test
@@ -212,6 +214,82 @@ public class SprintChartsRestControllerTest {
         Object burndownWarnings = JsonPath.read(burndown, "$.warnings");
         Object burnupWarnings = JsonPath.read(burnup, "$.warnings");
         assertEquals(burndownWarnings, burnupWarnings);
+    }
+
+    @Test
+    @WithMockUser(username = "dev", roles = "dev")
+    public void burndown_reopenedTask_remainingRisesAgain() throws Exception {
+        doneTask.setIssueStatus(statusOf(IssueStatusID.IN_PROGRESS));
+        issueRepository.save(doneTask);
+        recordChange(sprint, doneTask, IssueStatusID.IN_PROGRESS, "2026-11-05T10:00:00Z");
+
+        mvc.perform(get(BASE + "/" + sprint.getId() + "/burndown"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.points[2].remaining", is(0)))
+                .andExpect(jsonPath("$.points[3].remaining", is(5)))
+                .andExpect(jsonPath("$.points[4].remaining", is(5)));
+    }
+
+    @Test
+    @WithMockUser(username = "dev", roles = "dev")
+    public void burndown_lastPointMatchesSummaryIncompleteEstimate() throws Exception {
+        createIssue(sprint, 3, IssueStatusID.IN_PROGRESS);
+
+        String burndown = bodyOf(sprint, "/burndown");
+        String summary = bodyOf(sprint, "/summary");
+
+        List<Map<String, Object>> points = JsonPath.read(burndown, "$.points");
+        long lastRemaining = ((Number) points.get(points.size() - 1).get("remaining")).longValue();
+        long incompleteEstimate = ((Number) JsonPath.read(summary, "$.incompleteEstimate")).longValue();
+
+        assertEquals(3L, incompleteEstimate);
+        assertEquals(incompleteEstimate, lastRemaining);
+    }
+
+    @Test
+    @WithMockUser(username = "dev", roles = "dev")
+    public void burndownAndBurnup_areDeterministic() throws Exception {
+        String burndownFirst = bodyOf(sprint, "/burndown");
+        String burndownSecond = bodyOf(sprint, "/burndown");
+        String burnupFirst = bodyOf(sprint, "/burnup");
+        String burnupSecond = bodyOf(sprint, "/burnup");
+
+        // Full JSON strings, not just the status: days, points and warnings must be stable.
+        assertEquals(burndownFirst, burndownSecond);
+        assertEquals(burnupFirst, burnupSecond);
+    }
+
+    @Test
+    @WithMockUser(username = "dev", roles = "dev")
+    public void burnup_nonNumericId_returns400WithApiError() throws Exception {
+        mvc.perform(get(BASE + "/abc/burnup"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code", is("INVALID_PARAMETER")))
+                .andExpect(jsonPath("$.message", containsString("sprintId")));
+    }
+
+    @Test
+    @WithMockUser(username = "dev", roles = "dev")
+    public void unestimatedSprint_scopeAndRemainingAreZeroWithWarning() throws Exception {
+        Sprint unestimated = createSprint(project);
+        createIssue(unestimated, null, IssueStatusID.IN_PROGRESS);
+
+        mvc.perform(get(BASE + "/" + unestimated.getId() + "/burndown"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.points", hasSize(5)))
+                .andExpect(jsonPath("$.points[*].remaining", everyItem(is(0))))
+                .andExpect(jsonPath("$.warnings", hasItem(startsWith("UNESTIMATED_TASKS"))));
+        mvc.perform(get(BASE + "/" + unestimated.getId() + "/burnup"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.points", hasSize(5)))
+                .andExpect(jsonPath("$.points[*].scope", everyItem(is(0))))
+                .andExpect(jsonPath("$.warnings", hasItem(startsWith("UNESTIMATED_TASKS"))));
+    }
+
+    private String bodyOf(Sprint target, String endpoint) throws Exception {
+        return mvc.perform(get(BASE + "/" + target.getId() + endpoint))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
     }
 
     private Sprint createSprint(Project project) {

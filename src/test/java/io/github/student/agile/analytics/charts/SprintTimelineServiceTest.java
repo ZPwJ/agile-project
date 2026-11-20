@@ -13,12 +13,14 @@ import io.github.student.agile.resource.domain.IssueStatus;
 import io.github.student.agile.resource.domain.IssueStatusHistory;
 import io.github.student.agile.resource.domain.Project;
 import io.github.student.agile.resource.domain.Sprint;
+import io.github.student.agile.resource.domain.SprintIssueSnapshot;
 import io.github.student.agile.resource.domain.dictionary.IssueStatusID;
 import io.github.student.agile.resource.repository.BacklogRepository;
 import io.github.student.agile.resource.repository.IssueRepository;
 import io.github.student.agile.resource.repository.IssueStatusHistoryRepository;
 import io.github.student.agile.resource.repository.IssueStatusRepository;
 import io.github.student.agile.resource.repository.ProjectRepository;
+import io.github.student.agile.resource.repository.SprintIssueSnapshotRepository;
 import io.github.student.agile.resource.repository.SprintRepository;
 import jakarta.transaction.Transactional;
 import org.junit.jupiter.api.BeforeEach;
@@ -65,6 +67,8 @@ public class SprintTimelineServiceTest {
     private IssueStatusRepository issueStatusRepository;
     @Autowired
     private IssueStatusHistoryRepository historyRepository;
+    @Autowired
+    private SprintIssueSnapshotRepository snapshotRepository;
 
     private Project project;
 
@@ -363,15 +367,96 @@ public class SprintTimelineServiceTest {
         assertHasWarning(timeline, SprintChartWarning.EMPTY_SPRINT);
     }
 
+    @Test
+    public void springDstDay_changeAt0030UtcStaysOnThatWarsawDay() {
+        LocalDate dstDay = LocalDate.of(2026, 3, 29);
+        Sprint sprint = sprint(dstDay.minusDays(1), dstDay.plusDays(1));
+        Issue task = issue(sprint, 5, IssueStatusID.DONE);
+        // 2026-03-29T00:30Z is 01:30 CET on the same Warsaw day; the clock switches at 02:00 local.
+        change(sprint, task, IssueStatusID.DONE, "2026-03-29T00:30:00Z");
+
+        SprintTimeline timeline = timelineService.forSprint(sprint.getId());
+
+        assertEquals(List.of(LocalDate.of(2026, 3, 28), dstDay, LocalDate.of(2026, 3, 30)),
+                timeline.days().stream().map(SprintTimelineDay::date).toList());
+        assertDay(timeline, "2026-03-28", 0, 0);
+        assertDay(timeline, "2026-03-29", 5, 5);
+        assertDay(timeline, "2026-03-30", 0, 5);
+    }
+
+    @Test
+    public void autumnDstDay_changeAt0030UtcStaysOnThatWarsawDay() {
+        LocalDate dstDay = LocalDate.of(2026, 10, 25);
+        Sprint sprint = sprint(dstDay.minusDays(1), dstDay.plusDays(1));
+        Issue task = issue(sprint, 5, IssueStatusID.DONE);
+        // 2026-10-25T00:30Z is 02:30 CEST on the same Warsaw day; the clock switches at 03:00 local.
+        change(sprint, task, IssueStatusID.DONE, "2026-10-25T00:30:00Z");
+
+        SprintTimeline timeline = timelineService.forSprint(sprint.getId());
+
+        assertEquals(List.of(LocalDate.of(2026, 10, 24), dstDay, LocalDate.of(2026, 10, 26)),
+                timeline.days().stream().map(SprintTimelineDay::date).toList());
+        assertDay(timeline, "2026-10-24", 0, 0);
+        assertDay(timeline, "2026-10-25", 5, 5);
+        assertDay(timeline, "2026-10-26", 0, 5);
+    }
+
+    @Test
+    public void finishedSprint_readsScopeFromSnapshotRows() {
+        LocalDate today = LocalDate.now(WARSAW);
+        Sprint sprint = sprint(today.minusDays(2), today);
+        sprint.setIsDone(Boolean.TRUE);
+        sprint.setEndDate(null); // no recorded end: the axis falls back to today
+        sprintRepository.save(sprint);
+        snapshotRepository.save(SprintIssueSnapshot.builder()
+                .sprint(sprint)
+                .issueId(500)
+                .estimation(5)
+                .completed(Boolean.TRUE)
+                .build());
+        change(sprint, 500, IssueStatusID.DONE, instantAt(today.minusDays(1), 10));
+
+        SprintTimeline timeline = timelineService.forSprint(sprint.getId());
+
+        assertEquals(3, timeline.days().size());
+        assertEquals(today, timeline.days().get(2).date());
+        assertEquals(5, timeline.initialScope());
+        assertDay(timeline, today.minusDays(2).toString(), 0, 0);
+        assertDay(timeline, today.minusDays(1).toString(), 5, 5);
+        assertDay(timeline, today.toString(), 0, 5);
+        assertEquals(SprintChartDataCompleteness.COMPLETE, timeline.dataCompleteness());
+    }
+
+    @Test
+    public void changeOutsideSprintDates_isIgnored() {
+        Sprint sprint = sprint();
+        Issue task = issue(sprint, 5, IssueStatusID.IN_PROGRESS);
+        // RULE R8: a change before the sprint start cannot be placed on this axis.
+        change(sprint, task, IssueStatusID.IN_PROGRESS, instantAt(START.minusDays(2), 10));
+
+        SprintTimeline timeline = timelineService.forSprint(sprint.getId());
+
+        assertEquals(5, timeline.days().size());
+        assertEquals(List.of(0L, 0L, 0L, 0L, 0L),
+                timeline.days().stream().map(SprintTimelineDay::cumulativeCompleted).toList());
+        assertHasWarning(timeline, SprintChartWarning.NO_RECORDED_CHANGES);
+    }
+
     private Sprint sprint() {
         return sprint(true, false);
     }
 
     private Sprint sprint(boolean active, boolean done) {
-        Sprint sprint = SprintBuilder.createSprintEntity(project, active);
+        Sprint sprint = sprint(START, END);
+        sprint.setActive(active);
         sprint.setIsDone(done);
-        sprint.setStartDate(START.atStartOfDay(WARSAW));
-        sprint.setEndDate(END.atTime(23, 59, 59).atZone(WARSAW));
+        return sprintRepository.save(sprint);
+    }
+
+    private Sprint sprint(LocalDate start, LocalDate end) {
+        Sprint sprint = SprintBuilder.createSprintEntity(project, true);
+        sprint.setStartDate(start.atStartOfDay(WARSAW));
+        sprint.setEndDate(end.atTime(23, 59, 59).atZone(WARSAW));
         sprint.setSprintIssues(new HashSet<>());
         return sprintRepository.save(sprint);
     }

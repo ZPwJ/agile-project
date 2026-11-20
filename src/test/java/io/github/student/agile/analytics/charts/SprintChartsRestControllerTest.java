@@ -55,8 +55,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * WF-3 burndown and WF-4 burnup endpoints: JSON shapes of plan sections 2.1/2.2, ascending
- * non-negative points, and the existing analytics error body for 404/400.
+ * WF-3 burndown and WF-4 burnup endpoints: JSON shapes of
+ * docs/analytics/wf3-wf4-charts.md, ascending non-negative points, and the existing analytics
+ * error body for 404/400.
  */
 @Transactional
 @EnableJpaAuditing

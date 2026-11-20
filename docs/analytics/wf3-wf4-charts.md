@@ -214,7 +214,7 @@ because grouping in SQL would mix the UTC calendar with the Warsaw calendar and 
 "last change of the day" ordering. The `min(changed_at)` query is global and runs once per
 request, not once per sprint.
 
-The plan's R5 budget mentions one scope query; the code performs two single-scope reads (the
+The performance budget is one scope read per source; the code performs two single-scope reads (the
 provider's internal read plus the loader's). This is still one query per source, not an N+1.
 Requests that fail E1/E2 return before the history reads (4 selects); an unknown sprint throws
 after the first sprint lookup (1 select).

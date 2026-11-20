@@ -34,9 +34,11 @@ import java.util.stream.Collectors;
  * <p>
  * Sources: scope and unit from {@link SprintMetricsProvider}; tasks from {@link SprintScopeLoader};
  * "when" from one flat history query. Nothing is invented: no synthetic points, no interpolation,
- * no "assume it was done earlier". See plan sections 3.2-3.6 for the canonical rules.
+ * no "assume it was done earlier". See docs/analytics/wf3-wf4-charts.md (Day model,
+ * Daily computation) for the canonical rules.
  * <p>
- * Every edge rule of plan section 3.4 is marked with a {@code RULE Ex} comment next to the code
+ * Every edge rule of docs/analytics/wf3-wf4-charts.md (Edge rules) is marked with a
+ * {@code RULE Ex} comment next to the code
  * that implements it. The ids are part of the documentation, not of the API.
  */
 @Service

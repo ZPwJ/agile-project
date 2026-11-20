@@ -41,8 +41,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Timeline rules of plan sections 3.2-3.6: inclusive Warsaw day axis, points finished per day,
- * and every edge rule E1-E12 of section 3.4. Rows are written with explicit instants so no clock
+ * Timeline rules of docs/analytics/wf3-wf4-charts.md: inclusive Warsaw day axis, points finished per day,
+ * and every edge rule E1-E12 (Edge rules). Rows are written with explicit instants so no clock
  * or time zone of the machine leaks in.
  */
 @SpringBootTest(classes = TestConfiguration.class)

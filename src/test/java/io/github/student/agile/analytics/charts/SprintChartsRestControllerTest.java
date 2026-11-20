@@ -1,5 +1,6 @@
 package io.github.student.agile.analytics.charts;
 
+import com.jayway.jsonpath.JsonPath;
 import io.github.student.agile.builder.SprintBuilder;
 import io.github.student.agile.config.TestConfiguration;
 import io.github.student.agile.resource.domain.Backlog;
@@ -34,23 +35,28 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
 
 import static io.github.student.agile.builder.IssueBuilder.createIssueEntityWithSprint;
 import static io.github.student.agile.builder.ProjectBuilder.createProjectEntity;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.everyItem;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
+import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.startsWith;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * WF-3 burndown endpoint: JSON shape of plan section 2.1, ascending non-negative points,
- * and the existing analytics error body for 404/400.
+ * WF-3 burndown and WF-4 burnup endpoints: JSON shapes of plan sections 2.1/2.2, ascending
+ * non-negative points, and the existing analytics error body for 404/400.
  */
 @Transactional
 @EnableJpaAuditing
@@ -91,33 +97,12 @@ public class SprintChartsRestControllerTest {
         backlog.setProject(project);
         backlogRepository.save(backlog);
 
-        Sprint s = SprintBuilder.createSprintEntity(project, true);
-        s.setStartDate(START.atStartOfDay(WARSAW));
-        s.setEndDate(END.atTime(23, 59, 59).atZone(WARSAW));
-        s.setSprintIssues(new HashSet<>());
-        sprint = sprintRepository.save(s);
+        sprint = createSprint(project);
+        coverHistoryFrom2020();
 
-        // Recording-start sentinel: the recording covers the sprint start, so the axis is the
-        // whole planned 5-day range (rule E6).
-        historyRepository.save(IssueStatusHistory.builder()
-                .issueId(-1)
-                .sprintId(null)
-                .newStatus(statusOf(IssueStatusID.IN_PROGRESS))
-                .changedAt(Instant.parse("2020-01-01T00:00:00Z"))
-                .build());
-
-        Issue done = createIssueEntityWithSprint(sprint);
-        done.setEstimation(5);
-        done.setIssueStatus(statusOf(IssueStatusID.DONE));
-        issueRepository.save(done);
-
+        Issue done = createIssue(sprint, 5, IssueStatusID.DONE);
         // The only work of the sprint is finished on the third day of the axis.
-        historyRepository.save(IssueStatusHistory.builder()
-                .issueId(done.getId())
-                .sprintId(sprint.getId())
-                .newStatus(statusOf(IssueStatusID.DONE))
-                .changedAt(Instant.parse("2026-11-04T10:00:00Z"))
-                .build());
+        recordChange(sprint, done, IssueStatusID.DONE, "2026-11-04T10:00:00Z");
     }
 
     @Test
@@ -165,6 +150,103 @@ public class SprintChartsRestControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code", is("INVALID_PARAMETER")))
                 .andExpect(jsonPath("$.message", containsString("sprintId")));
+    }
+
+    @Test
+    @WithMockUser(username = "dev", roles = "dev")
+    public void burnup_completedIsCumulativeAndScopeIsConstant() throws Exception {
+        // Second completion on another day: 5 points on 2026-11-04, 3 points on 2026-11-05.
+        Issue second = createIssue(sprint, 3, IssueStatusID.DONE);
+        recordChange(sprint, second, IssueStatusID.DONE, "2026-11-05T10:00:00Z");
+
+        mvc.perform(get(BASE + "/" + sprint.getId() + "/burnup"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.points", hasSize(5)))
+                .andExpect(jsonPath("$.points[0].completed", is(0)))
+                .andExpect(jsonPath("$.points[1].completed", is(0)))
+                .andExpect(jsonPath("$.points[2].completed", is(5)))
+                .andExpect(jsonPath("$.points[3].completed", is(8)))
+                .andExpect(jsonPath("$.points[4].completed", is(8)))
+                .andExpect(jsonPath("$.points[*].scope", everyItem(is(8))));
+    }
+
+    @Test
+    @WithMockUser(username = "dev", roles = "dev")
+    public void burnup_unknownSprint_returns404() throws Exception {
+        mvc.perform(get(BASE + "/-1/burnup"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code", is("NOT_FOUND")))
+                .andExpect(jsonPath("$.message", containsString("-1")));
+    }
+
+    @Test
+    @WithMockUser(username = "dev", roles = "dev")
+    public void burnup_lastPointMatchesSummaryVelocity() throws Exception {
+        String burnup = mvc.perform(get(BASE + "/" + sprint.getId() + "/burnup"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String summary = mvc.perform(get(BASE + "/" + sprint.getId() + "/summary"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+
+        List<Map<String, Object>> points = JsonPath.read(burnup, "$.points");
+        long lastCompleted = ((Number) points.get(points.size() - 1).get("completed")).longValue();
+        long velocity = ((Number) JsonPath.read(summary, "$.velocity")).longValue();
+
+        assertEquals(velocity, lastCompleted);
+    }
+
+    @Test
+    @WithMockUser(username = "dev", roles = "dev")
+    public void burnup_warningsContainScopeNotHistorical() throws Exception {
+        String burndown = mvc.perform(get(BASE + "/" + sprint.getId() + "/burndown"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String burnup = mvc.perform(get(BASE + "/" + sprint.getId() + "/burnup"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.points", hasSize(5)))
+                .andExpect(jsonPath("$.warnings", hasItem(startsWith("SCOPE_NOT_HISTORICAL"))))
+                .andReturn().getResponse().getContentAsString();
+
+        // E12 applies to both chart types, and burnup adds no warning of its own.
+        Object burndownWarnings = JsonPath.read(burndown, "$.warnings");
+        Object burnupWarnings = JsonPath.read(burnup, "$.warnings");
+        assertEquals(burndownWarnings, burnupWarnings);
+    }
+
+    private Sprint createSprint(Project project) {
+        Sprint s = SprintBuilder.createSprintEntity(project, true);
+        s.setStartDate(START.atStartOfDay(WARSAW));
+        s.setEndDate(END.atTime(23, 59, 59).atZone(WARSAW));
+        s.setSprintIssues(new HashSet<>());
+        return sprintRepository.save(s);
+    }
+
+    private void coverHistoryFrom2020() {
+        // Recording-start sentinel: the recording covers the sprint start, so the axis is the
+        // whole planned 5-day range (rule E6).
+        historyRepository.save(IssueStatusHistory.builder()
+                .issueId(-1)
+                .sprintId(null)
+                .newStatus(statusOf(IssueStatusID.IN_PROGRESS))
+                .changedAt(Instant.parse("2020-01-01T00:00:00Z"))
+                .build());
+    }
+
+    private Issue createIssue(Sprint sprint, Integer estimation, IssueStatusID status) {
+        Issue issue = createIssueEntityWithSprint(sprint);
+        issue.setEstimation(estimation);
+        issue.setIssueStatus(statusOf(status));
+        return issueRepository.save(issue);
+    }
+
+    private void recordChange(Sprint sprint, Issue issue, IssueStatusID newStatus, String changedAt) {
+        historyRepository.save(IssueStatusHistory.builder()
+                .issueId(issue.getId())
+                .sprintId(sprint.getId())
+                .newStatus(statusOf(newStatus))
+                .changedAt(Instant.parse(changedAt))
+                .build());
     }
 
     private IssueStatus statusOf(IssueStatusID id) {

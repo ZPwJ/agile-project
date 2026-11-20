@@ -1,5 +1,7 @@
 package io.github.student.agile.resource.service;
 
+import io.github.student.agile.exception.definition.ProjectAccessDeniedException;
+import io.github.student.agile.exception.definition.ResourceNotFoundException;
 import io.github.student.agile.resource.domain.Project;
 import io.github.student.agile.resource.dto.UserDTO;
 import io.github.student.agile.resource.repository.ProjectRepository;
@@ -10,8 +12,10 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 
+import java.util.Objects;
 import java.util.Set;
 
+import static io.github.student.agile.exception.dictionary.ExceptionMessages.ACTION_NOT_ALLOWED;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.PROJECT_DOES_NOT_EXISTS;
 import static java.util.Objects.isNull;
 
@@ -65,10 +69,9 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public boolean isProjectOwner(Integer projectID) {
-        String currentLoggedUserUUID = currentJwt().getClaimAsString("preferred_username");
-        Project project = projectRepository.findById(projectID).orElseThrow(RuntimeException::new);
-        String projectOwnerUUID = project.getProjectOwner();
-        return projectOwnerUUID.equals(currentLoggedUserUUID);
+        String currentLoggedUserUUID = currentUserUuid();
+        Project project = findProjectOrThrow(projectID);
+        return Objects.equals(project.getProjectOwner(), currentLoggedUserUUID);
     }
 
     @Override
@@ -77,12 +80,39 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    public boolean hasProjectAccess(Integer projectID) {
+        Project project = findProjectOrThrow(projectID);
+        String currentUserUUID = currentUserUuid();
+        if (Objects.equals(project.getProjectOwner(), currentUserUUID)) {
+            return true;
+        }
+        Set<String> members = project.getUserIDs();
+        return members != null && members.contains(currentUserUUID);
+    }
+
+    @Override
+    public void verifyProjectAccess(Integer projectID) {
+        if (!hasProjectAccess(projectID)) {
+            throw new ProjectAccessDeniedException(ACTION_NOT_ALLOWED);
+        }
+    }
+
+    @Override
     public Set<String> getAllProjectUsersUUIDs(Integer projectID) {
+        return findProjectOrThrow(projectID).getUserIDs();
+    }
 
-        Project project = projectRepository.findById(projectID)
-                .orElseThrow(() -> new RuntimeException(PROJECT_DOES_NOT_EXISTS));
+    private Project findProjectOrThrow(Integer projectID) {
+        return projectRepository.findById(projectID)
+                .orElseThrow(() -> new ResourceNotFoundException(PROJECT_DOES_NOT_EXISTS));
+    }
 
-        return project.getUserIDs();
+    private String currentUserUuid() {
+        UserDTO currentUser = getCurrentLoggedUser();
+        if (currentUser == null || currentUser.getUuid() == null) {
+            throw new IllegalStateException("Current user identifier is not available");
+        }
+        return currentUser.getUuid();
     }
 
     private Jwt currentJwt() {

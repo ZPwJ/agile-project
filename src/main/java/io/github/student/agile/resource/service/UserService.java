@@ -12,5 +12,7 @@ public interface UserService {
     UserDTO getUserSafely(String uuid);
     boolean isProjectOwner(Integer projectID);
     boolean isAnyProjectOwner(String uuid);
+    boolean hasProjectAccess(Integer projectID);
+    void verifyProjectAccess(Integer projectID);
     Set<String> getAllProjectUsersUUIDs(Integer projectID);
 }

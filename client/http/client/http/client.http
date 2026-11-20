@@ -1,0 +1,42 @@
+@apiUrl = http://localhost:8081
+@projectId = 1
+@sprintId = 1
+
+### Get access token
+POST {{serverUrl}}/realms/agile-project/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password
+&client_id={{clientId}}
+&client_secret={{clientSecret}}
+&username={{username}}
+&password={{password}}
+
+> {%
+    client.global.set("auth_token", response.body.access_token);
+%}
+
+### Sprint summary report (WF-1)
+GET {{apiUrl}}/api/analytics/sprints/{{sprintId}}/report
+Authorization: Bearer {{auth_token}}
+
+### Sprint burndown chart (WF-3)
+GET {{apiUrl}}/api/analytics/sprints/{{sprintId}}/burndown
+Authorization: Bearer {{auth_token}}
+
+### Sprint burnup chart (WF-4)
+GET {{apiUrl}}/api/analytics/sprints/{{sprintId}}/burnup
+Authorization: Bearer {{auth_token}}
+
+### Sprint comparison (WF-5)
+GET {{apiUrl}}/api/analytics/projects/{{projectId}}/sprints
+Authorization: Bearer {{auth_token}}
+
+### Sprint comparison with date filter (WF-6)
+GET {{apiUrl}}/api/analytics/projects/{{projectId}}/sprints?from=2026-11-01&to=2026-11-30
+Authorization: Bearer {{auth_token}}
+
+### Sprint comparison CSV export (WF-7)
+GET {{apiUrl}}/api/analytics/projects/{{projectId}}/sprints/export?from=2026-11-01&to=2026-11-30
+Authorization: Bearer {{auth_token}}
+Accept: text/csv

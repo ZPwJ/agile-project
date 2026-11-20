@@ -35,6 +35,9 @@ import java.util.stream.Collectors;
  * Sources: scope and unit from {@link SprintMetricsProvider}; tasks from {@link SprintScopeLoader};
  * "when" from one flat history query. Nothing is invented: no synthetic points, no interpolation,
  * no "assume it was done earlier". See plan sections 3.2-3.6 for the canonical rules.
+ * <p>
+ * Every edge rule of plan section 3.4 is marked with a {@code RULE Ex} comment next to the code
+ * that implements it. The ids are part of the documentation, not of the API.
  */
 @Service
 @Transactional(readOnly = true)
@@ -71,29 +74,69 @@ public class SprintTimelineService {
             warnings.add(SprintChartWarning.INVALID_DATE_RANGE);
             return build(sprintId, metrics, scope, List.of(), warnings, true);
         }
+
+        addActiveSprintWarning(state, warnings);
+        addPlannedSprintWarning(state, warnings);
+        addEmptySprintWarning(tasks, warnings);
+        addUnestimatedTasksWarning(tasks, warnings);
+
+        Map<Integer, Long> estimation = estimationOf(tasks);
+        ChangeSummary changes = loadChanges(sprintId, start, end, estimation);
+
+        addNoRecordedChangesWarning(changes.firstChangeDay(), warnings);
+        addScopeChangedWarning(changes.outOfScope(), warnings);
+        long undated = addUndatedCompletionWarning(tasks, changes.lastRecordedState(), warnings);
+        boolean historyCovered = checkHistoryCoverage(start, warnings);
+
+        List<SprintTimelineDay> days = buildDays(start, end, changes, estimation, historyCovered);
+        addScopeNotHistoricalWarning(days, warnings);
+
+        boolean partial = !historyCovered || undated > 0 || days.isEmpty();
+        return build(sprintId, metrics, scope, days, warnings, partial);
+    }
+
+    private static void addActiveSprintWarning(SprintState state, SprintChartWarnings warnings) {
         // RULE E4: an active sprint ends today, future days are never invented.
         if (state == SprintState.ACTIVE) {
             warnings.add(SprintChartWarning.SPRINT_IN_PROGRESS);
         }
+    }
+
+    private static void addPlannedSprintWarning(SprintState state, SprintChartWarnings warnings) {
         // RULE E5: a planned sprint is shown for its planned days only.
         if (state == SprintState.PLANNED) {
             warnings.add(SprintChartWarning.SPRINT_NOT_STARTED);
         }
+    }
+
+    private static void addEmptySprintWarning(List<SprintTaskPoints> tasks,
+                                              SprintChartWarnings warnings) {
         // RULE E10: empty sprint.
         if (tasks.isEmpty()) {
             warnings.add(SprintChartWarning.EMPTY_SPRINT);
         }
+    }
+
+    private static void addUnestimatedTasksWarning(List<SprintTaskPoints> tasks,
+                                                   SprintChartWarnings warnings) {
         // RULE E9: a task without estimation adds 0 points.
         long unestimated = tasks.stream().filter(task -> task.estimation() == null).count();
         if (unestimated > 0) {
             warnings.add(SprintChartWarning.UNESTIMATED_TASKS, unestimated);
         }
+    }
 
+    private static Map<Integer, Long> estimationOf(List<SprintTaskPoints> tasks) {
         Map<Integer, Long> estimation = new HashMap<>();
         for (SprintTaskPoints task : tasks) {
             estimation.put(task.issueId(), task.estimation() == null ? 0L : task.estimation());
         }
+        return estimation;
+    }
 
+    /** One flat history query; the rows are grouped into Warsaw days in Java. */
+    private ChangeSummary loadChanges(Integer sprintId, LocalDate start, LocalDate end,
+                                      Map<Integer, Long> estimation) {
         List<SprintChartRepository.SprintStatusChange> changes =
                 chartRepository.findStatusChangesBySprintId(sprintId);
         Map<Integer, IssueStatus> statuses = issueStatusRepository.findAll().stream()
@@ -123,15 +166,28 @@ public class SprintTimelineService {
                 firstChangeDay = day;
             }
         }
+        return new ChangeSummary(lastStateOfDay, lastRecordedState, outOfScope, firstChangeDay);
+    }
 
+    private static void addNoRecordedChangesWarning(LocalDate firstChangeDay,
+                                                    SprintChartWarnings warnings) {
         // RULE E3: no change inside the sprint dates means no day can be backed by evidence.
         if (firstChangeDay == null) {
             warnings.add(SprintChartWarning.NO_RECORDED_CHANGES);
         }
+    }
+
+    private static void addScopeChangedWarning(Set<Integer> outOfScope,
+                                               SprintChartWarnings warnings) {
+        // One warning per distinct out-of-scope task; the changes themselves are dropped above (E7).
         if (!outOfScope.isEmpty()) {
             warnings.add(SprintChartWarning.SCOPE_CHANGED, outOfScope.size());
         }
+    }
 
+    private static long addUndatedCompletionWarning(List<SprintTaskPoints> tasks,
+                                                    Map<Integer, Boolean> lastRecordedState,
+                                                    SprintChartWarnings warnings) {
         // RULE E8: completed in the scope source but no recorded DONE change inside the axis.
         long undated = tasks.stream()
                 .filter(SprintTaskPoints::completed)
@@ -140,44 +196,57 @@ public class SprintTimelineService {
         if (undated > 0) {
             warnings.add(SprintChartWarning.UNDATED_COMPLETION, undated);
         }
+        return undated;
+    }
 
+    private boolean checkHistoryCoverage(LocalDate start, SprintChartWarnings warnings) {
         // RULE E6: points may only start where the recording covers the sprint.
-        boolean historyCovered = chartRepository.findHistoryRecordingStart()
+        boolean covered = chartRepository.findHistoryRecordingStart()
                 .map(SprintTimelineService::dayOf)
                 .map(recordedFrom -> !recordedFrom.isAfter(start))
                 .orElse(false);
-        if (!historyCovered) {
+        if (!covered) {
             warnings.add(SprintChartWarning.HISTORY_STARTED_LATE);
         }
+        return covered;
+    }
 
+    private static List<SprintTimelineDay> buildDays(LocalDate start, LocalDate end,
+                                                     ChangeSummary changes,
+                                                     Map<Integer, Long> estimation,
+                                                     boolean historyCovered) {
         List<SprintTimelineDay> days = new ArrayList<>();
-        if (historyCovered || firstChangeDay != null) {
-            LocalDate first = historyCovered ? start : firstChangeDay;
-            Set<Integer> completedTasks = new HashSet<>();
-            long completedSoFar = 0;
-            for (LocalDate day = first; !day.isAfter(end); day = day.plusDays(1)) {
-                for (Map.Entry<Integer, Boolean> stateOfDay
-                        : lastStateOfDay.getOrDefault(day, Map.of()).entrySet()) {
-                    if (stateOfDay.getValue()) {
-                        completedTasks.add(stateOfDay.getKey());
-                    } else {
-                        completedTasks.remove(stateOfDay.getKey());
-                    }
-                }
-                long now = completedTasks.stream()
-                        .mapToLong(id -> estimation.getOrDefault(id, 0L))
-                        .sum();
-                days.add(new SprintTimelineDay(day, now - completedSoFar, now));
-                completedSoFar = now;
-            }
+        if (!historyCovered && changes.firstChangeDay() == null) {
+            return days;
         }
+        LocalDate first = historyCovered ? start : changes.firstChangeDay();
+        Set<Integer> completedTasks = new HashSet<>();
+        long completedSoFar = 0;
+        for (LocalDate day = first; !day.isAfter(end); day = day.plusDays(1)) {
+            // Apply the changes of this day at its end; the carried state survives (E11 above).
+            for (Map.Entry<Integer, Boolean> stateOfDay
+                    : changes.lastStateOfDay().getOrDefault(day, Map.of()).entrySet()) {
+                if (stateOfDay.getValue()) {
+                    completedTasks.add(stateOfDay.getKey());
+                } else {
+                    completedTasks.remove(stateOfDay.getKey());
+                }
+            }
+            long now = completedTasks.stream()
+                    .mapToLong(id -> estimation.getOrDefault(id, 0L))
+                    .sum();
+            days.add(new SprintTimelineDay(day, now - completedSoFar, now));
+            completedSoFar = now;
+        }
+        return days;
+    }
+
+    private static void addScopeNotHistoricalWarning(List<SprintTimelineDay> days,
+                                                     SprintChartWarnings warnings) {
         // RULE E12: the scope is the value when the numbers were taken, not a historical one.
         if (!days.isEmpty()) {
             warnings.add(SprintChartWarning.SCOPE_NOT_HISTORICAL);
         }
-
-        boolean partial = !historyCovered || undated > 0 || days.isEmpty();
-        return build(sprintId, metrics, scope, days, warnings, partial);
     }
 
     private static SprintTimeline build(Integer sprintId, SprintMetrics metrics, long scope,
@@ -190,13 +259,13 @@ public class SprintTimelineService {
 
     private static LocalDate endDay(Sprint sprint, SprintState state, LocalDate start) {
         LocalDate today = LocalDate.now(CHART_ZONE);
-        // RULE E4: an active sprint ends at min(planned end, today), never in the future.
+        // Active sprints end at min(planned end, today), never in the future (E4).
         if (state == SprintState.ACTIVE) {
             LocalDate planned = sprint.getEndDate() == null ? today : dayOf(sprint.getEndDate());
             LocalDate end = planned.isBefore(today) ? planned : today;
             return end.isBefore(start) ? start : end;
         }
-        // RULE E5: a planned sprint without an end date is a single day.
+        // Planned sprints without an end date are a single day; with one they use it (E5).
         if (sprint.getEndDate() != null) {
             return dayOf(sprint.getEndDate());
         }
@@ -213,5 +282,11 @@ public class SprintTimelineService {
 
     private static LocalDate dayOf(Instant instant) {
         return instant == null ? null : LocalDate.ofInstant(instant, CHART_ZONE);
+    }
+
+    private record ChangeSummary(Map<LocalDate, Map<Integer, Boolean>> lastStateOfDay,
+                                 Map<Integer, Boolean> lastRecordedState,
+                                 Set<Integer> outOfScope,
+                                 LocalDate firstChangeDay) {
     }
 }

@@ -1,6 +1,9 @@
 package io.github.student.agile.resource.analytics.charts;
 
-/** Stable machine-readable codes of the chart warnings. Order == order in the JSON array. */
+/**
+ * Stable machine-readable codes of the chart warnings. Order == order in the JSON array.
+ * The code before {@code ": "} is part of the API contract: it may be extended, never renamed.
+ */
 public enum SprintChartWarning {
 
     NO_DATES("the sprint has no start date, so no point can be placed on the timeline"),

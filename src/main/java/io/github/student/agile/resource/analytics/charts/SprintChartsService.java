@@ -22,9 +22,7 @@ public class SprintChartsService {
         return new BurndownDTO(timeline.sprintId(), timeline.unit(), timeline.dataCompleteness(),
                 timeline.warnings(),
                 timeline.days().stream()
-                        // RULE E13: burndown never goes below zero.
-                        .map(day -> new BurndownPointDTO(day.date(),
-                                Math.max(0L, timeline.initialScope() - day.cumulativeCompleted())))
+                        .map(day -> new BurndownPointDTO(day.date(), remaining(timeline, day)))
                         .toList());
     }
 
@@ -33,9 +31,14 @@ public class SprintChartsService {
         return new BurnupDTO(timeline.sprintId(), timeline.unit(), timeline.dataCompleteness(),
                 timeline.warnings(),
                 timeline.days().stream()
-                        // RULE E12: the scope is not historical, so every point shows the same value.
+                        // The scope is constant on every point; SCOPE_NOT_HISTORICAL explains why (E12).
                         .map(day -> new BurnupPointDTO(day.date(), day.cumulativeCompleted(),
                                 timeline.initialScope()))
                         .toList());
+    }
+
+    private static long remaining(SprintTimeline timeline, SprintTimelineDay day) {
+        // RULE E13: burndown never goes below zero.
+        return Math.max(0L, timeline.initialScope() - day.cumulativeCompleted());
     }
 }

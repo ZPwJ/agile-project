@@ -7,7 +7,7 @@ import java.util.List;
 /**
  * Chart data of one sprint: the inclusive day axis and the points finished by the end of each day.
  * Days are ascending and unique; warnings are already rendered as {@code "CODE: message"}
- * in a deterministic order.
+ * in a deterministic order. The edge rules and their ids are documented in plan section 3.4.
  */
 public record SprintTimeline(Integer sprintId, MetricUnit unit, long initialScope,
                              List<SprintTimelineDay> days,

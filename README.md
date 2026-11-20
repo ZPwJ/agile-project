@@ -21,7 +21,6 @@
 - [Prerequisites](#prerequisites)
 - [Getting Started](#getting-started)
 - [Authentication](#authentication)
-- [API Documentation](#api-documentation)
 - [Sprint Analytics & Reporting Module](#sprint-analytics--reporting-module)
 - [Architecture Changes & Implementation Notes](#architecture-changes--implementation-notes)
 - [Testing & Code Coverage (JaCoCo)](#testing--code-coverage-jacoco)
@@ -146,7 +145,7 @@ Once the services have started, the main endpoints are:
 |---|---|
 | Resource server | [http://localhost:8081](http://localhost:8081) |
 | Authentication server | [http://localhost:8080](http://localhost:8080) |
-| OpenAPI UI | [http://localhost:8081/docs.html](http://localhost:8081/docs.html) |
+| OpenAPI UI | [http://localhost:8081/swagger-ui/index.html](http://localhost:8081/swagger-ui/index.html) |
 | OpenAPI specification | [http://localhost:8081/api-docs](http://localhost:8081/api-docs) |
 
 The API may require authentication for protected endpoints.
@@ -187,7 +186,7 @@ The imported configuration defines the following realm and client:
 
 ### Sample accounts
 
-The realm
+The realm export includes the following sample accounts for testing:
 
 | Account | Password | Client roles (`agile-project-server`) |
 |---|---|---|
@@ -336,8 +335,3 @@ client/http/
 ## Security Notes
 
 Local secrets are kept in `.env`, which is ignored by Git. `.env.example` provides safe local placeholders. API authentication uses JWT bearer tokens issued by Keycloak. Protected operations use role authorization (`@PreAuthorize`), and project-scoped operations verify membership with `UserServiceImpl.verifyProjectAccess`.
-
-## Implemented Backlog Issues
-
-- `WF-1`–`WF-7`: Sprint reporting, velocity, burndown/burnup, comparison, and CSV export.
-- `WNF-1`–`WNF-7`: Supporting documentation, test/coverage, security, error handling, performance, and implementation quality requirements.

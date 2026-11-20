@@ -2,6 +2,7 @@ package io.github.student.agile.resource.controller.analytics;
 
 import io.github.student.agile.resource.analytics.charts.SprintChartsService;
 import io.github.student.agile.resource.dto.BurndownDTO;
+import io.github.student.agile.resource.dto.BurnupDTO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -19,5 +20,10 @@ public class SprintChartsRestController {
     @GetMapping("/{sprintId}/burndown")
     public ResponseEntity<BurndownDTO> burndown(@PathVariable Integer sprintId) {
         return ResponseEntity.ok(chartsService.burndown(sprintId));
+    }
+
+    @GetMapping("/{sprintId}/burnup")
+    public ResponseEntity<BurnupDTO> burnup(@PathVariable Integer sprintId) {
+        return ResponseEntity.ok(chartsService.burnup(sprintId));
     }
 }

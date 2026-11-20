@@ -2,6 +2,8 @@ package io.github.student.agile.resource.analytics.charts;
 
 import io.github.student.agile.resource.dto.BurndownDTO;
 import io.github.student.agile.resource.dto.BurndownPointDTO;
+import io.github.student.agile.resource.dto.BurnupDTO;
+import io.github.student.agile.resource.dto.BurnupPointDTO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -23,6 +25,17 @@ public class SprintChartsService {
                         // RULE E13: burndown never goes below zero.
                         .map(day -> new BurndownPointDTO(day.date(),
                                 Math.max(0L, timeline.initialScope() - day.cumulativeCompleted())))
+                        .toList());
+    }
+
+    public BurnupDTO burnup(Integer sprintId) {
+        SprintTimeline timeline = timelineService.forSprint(sprintId);
+        return new BurnupDTO(timeline.sprintId(), timeline.unit(), timeline.dataCompleteness(),
+                timeline.warnings(),
+                timeline.days().stream()
+                        // RULE E12: the scope is not historical, so every point shows the same value.
+                        .map(day -> new BurnupPointDTO(day.date(), day.cumulativeCompleted(),
+                                timeline.initialScope()))
                         .toList());
     }
 }

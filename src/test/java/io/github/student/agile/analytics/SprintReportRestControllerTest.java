@@ -5,8 +5,6 @@ import io.github.student.agile.config.TestConfiguration;
 import io.github.student.agile.resource.analytics.reports.SprintComparisonService;
 import io.github.student.agile.resource.analytics.reports.SprintComparisonCsvService;
 import io.github.student.agile.resource.controller.analytics.SprintReportRestController;
-import io.github.student.agile.resource.domain.Sprint;
-import io.github.student.agile.resource.analytics.metrics.SprintMetrics;
 import io.github.student.agile.resource.analytics.error.ProjectNotFoundException;
 import io.github.student.agile.resource.dto.SprintComparisonRowDTO;
 
@@ -49,7 +47,7 @@ class SprintReportRestControllerTest {
     @Test
     @WithMockUser(username = "dev", roles = "dev")
     void comparisonReturnsEmptyJsonArray() throws Exception {
-        when(comparisonService.compare(1, null, null))
+        when(comparisonService.compareRows(1, null, null))
                 .thenReturn(List.of());
 
         mvc.perform(get(BASE + "/comparison"))
@@ -60,21 +58,12 @@ class SprintReportRestControllerTest {
     @Test
     @WithMockUser(username = "dev", roles = "dev")
     void comparisonReturnsSprintData() throws Exception {
-        Sprint sprint = Sprint.builder()
-                .id(10)
-                .name("Sprint testowy")
-                .build();
-
-        SprintMetrics metrics = new SprintMetrics(
-                10, null,
-                5, 3, 2, 0,
-                15L, 5L, null
-        );
-
-        when(comparisonService.compare(1, null, null))
+        when(comparisonService.compareRows(1, null, null))
                 .thenReturn(List.of(
-                        new SprintComparisonService.SprintComparisonResult(
-                                sprint, metrics
+                        new SprintComparisonRowDTO(
+                                10, "Sprint testowy", 1,
+                                null, null, null,
+                                3, 2, 15L, null
                         )
                 ));
 
@@ -89,7 +78,7 @@ class SprintReportRestControllerTest {
     @Test
     @WithMockUser(username = "dev", roles = "dev")
     void comparisonPassesDateFilters() throws Exception {
-        when(comparisonService.compare(
+        when(comparisonService.compareRows(
                 1, "2026-01-01", "2026-03-31"))
                 .thenReturn(List.of());
 
@@ -98,14 +87,14 @@ class SprintReportRestControllerTest {
                         .param("to", "2026-03-31"))
                 .andExpect(status().isOk());
 
-        verify(comparisonService).compare(
+        verify(comparisonService).compareRows(
                 1, "2026-01-01", "2026-03-31");
     }
 
     @Test
     @WithMockUser(username = "dev", roles = "dev")
     void comparisonUnknownProjectReturns404() throws Exception {
-        when(comparisonService.compare(1, null, null))
+        when(comparisonService.compareRows(1, null, null))
                 .thenThrow(new ProjectNotFoundException(1));
 
         mvc.perform(get(BASE + "/comparison"))
@@ -116,7 +105,7 @@ class SprintReportRestControllerTest {
     @Test
     @WithMockUser(username = "dev", roles = "dev")
     void csvHasCorrectContentType() throws Exception {
-        when(comparisonService.compare(1, null, null))
+        when(comparisonService.compareRows(1, null, null))
                 .thenReturn(List.of());
 
         mvc.perform(get(BASE + "/comparison.csv"))
@@ -127,7 +116,7 @@ class SprintReportRestControllerTest {
     @Test
     @WithMockUser(username = "dev", roles = "dev")
     void csvHasDownloadFilename() throws Exception {
-        when(comparisonService.compare(1, null, null))
+        when(comparisonService.compareRows(1, null, null))
                 .thenReturn(List.of());
 
         mvc.perform(get(BASE + "/comparison.csv"))
@@ -141,7 +130,7 @@ class SprintReportRestControllerTest {
     @Test
     @WithMockUser(username = "dev", roles = "dev")
     void emptyCsvContainsHeader() throws Exception {
-        when(comparisonService.compare(1, null, null))
+        when(comparisonService.compareRows(1, null, null))
                 .thenReturn(List.of());
 
         mvc.perform(get(BASE + "/comparison.csv"))

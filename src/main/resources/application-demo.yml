@@ -2,7 +2,7 @@
 spring:
   config:
     activate:
-      on-profile: dev
+      on-profile: demo
 
   datasource:
     url: jdbc:postgresql://localhost:5432/agiledb_demo

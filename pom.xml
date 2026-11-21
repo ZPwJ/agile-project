@@ -141,6 +141,7 @@
                         <element>PACKAGE</element>
                         <includes>
                             <include>io.github.student.agile.resource.analytics.reports</include>
+                            <include>io.github.student.agile.resource.analytics.charts</include>
                         </includes>
                         <limits>
                             <limit>

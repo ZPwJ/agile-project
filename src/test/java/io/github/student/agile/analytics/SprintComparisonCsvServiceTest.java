@@ -7,6 +7,8 @@ import io.github.student.agile.resource.dto.SprintComparisonRowDTO;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -98,5 +100,34 @@ class SprintComparisonCsvServiceTest {
         String csv = generate(List.of(row("Zażółć gęślą")));
 
         assertTrue(csv.contains("Zażółć gęślą"));
+    }
+
+    @Test
+    void formulaLikeNamesAreNeutralised() {
+        for (String name : List.of("=SUM(A1)", "+1", "-1", "@cmd", "	Tab")) {
+            String csv = generate(List.of(row(name)));
+
+            assertTrue(csv.contains(",'" + name + ","),
+                    "not neutralised: " + name);
+        }
+    }
+
+    @Test
+    void ordinaryNamesAreNotPrefixed() {
+        String csv = generate(List.of(row("Sprint 1")));
+
+        assertFalse(csv.contains("'"));
+    }
+
+    @Test
+    void datesAreWrittenAsOffsetDateTimeWithoutZoneName() {
+        ZonedDateTime start = ZonedDateTime.of(
+                2026, 2, 1, 9, 0, 0, 0, ZoneId.of("Europe/Warsaw"));
+
+        SprintComparisonRowDTO dated = new SprintComparisonRowDTO(
+                10, "S", 1, start, null, null, 3, 2, 15L, null);
+
+        assertTrue(generate(List.of(dated))
+                .contains("1,10,S,2026-02-01T09:00:00+01:00,,3,2,15"));
     }
 }

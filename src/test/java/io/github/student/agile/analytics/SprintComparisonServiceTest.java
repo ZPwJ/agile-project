@@ -170,4 +170,45 @@ class SprintComparisonServiceTest {
         assertTrue(result.isEmpty());
         verify(metricsProvider, never()).forSprints(anyCollection());
     }
+
+    @Test
+    void rowsExposeDatesInWarsawWhateverTheStoredZone() {
+        prepare(List.of(sprint(
+                1, "2026-02-01T08:00:00Z", "2026-02-14T08:00:00Z")));
+
+        var rows = service.compareRows(1, null, null);
+
+        assertEquals(1, rows.size());
+        assertEquals(1, rows.get(0).projectId());
+        assertEquals(
+                "2026-02-01T09:00+01:00[Europe/Warsaw]",
+                rows.get(0).startDate().toString());
+        assertEquals(
+                "2026-02-14T09:00+01:00[Europe/Warsaw]",
+                rows.get(0).endDate().toString());
+    }
+
+    @Test
+    void rowWithoutDatesKeepsNulls() {
+        prepare(List.of(sprint(1, null, null)));
+
+        var row = service.compareRows(1, null, null).get(0);
+
+        assertNull(row.startDate());
+        assertNull(row.endDate());
+    }
+
+    @Test
+    void missingMetricsForASprintFailWithAClearMessage() {
+        when(projectRepository.existsById(1)).thenReturn(true);
+        when(sprintRepository.findByProjectId(1))
+                .thenReturn(List.of(sprint(7, null, null)));
+        when(metricsProvider.forSprints(anyCollection()))
+                .thenReturn(Map.of());
+
+        var ex = assertThrows(NullPointerException.class,
+                () -> service.compare(1, null, null));
+
+        assertTrue(ex.getMessage().contains("sprint 7"));
+    }
 }

@@ -6,7 +6,6 @@ import io.github.student.agile.resource.domain.Project;
 import io.github.student.agile.resource.domain.Sprint;
 import io.github.student.agile.resource.domain.SprintIssueSnapshot;
 import io.github.student.agile.resource.repository.SprintIssueSnapshotRepository;
-import java.util.stream.Stream;
 import io.github.student.agile.resource.dto.SprintDTO;
 import io.github.student.agile.resource.mapper.SprintDTOMapper;
 import io.github.student.agile.resource.repository.IssueRepository;
@@ -25,6 +24,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.ACTIVE_SPRINT_EXISTS;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.EMPTY_SPRINT;

@@ -1,0 +1,24 @@
+meta {
+  name: Finished sprint cannot be deleted
+  type: http
+  seq: 23
+}
+
+delete {
+  url: {{baseUrl}}/api/sprint/{{s1}}
+  body: none
+  auth: inherit
+}
+
+tests {
+  test("rejected with an error status", function () {
+    expect(res.status).to.be.at.least(400);
+  });
+  test("message explains why", function () {
+    expect(String(res.body.message)).to.contain("finished sprint");
+  });
+}
+
+docs {
+  The existing endpoints report business-rule violations as HTTP 500 with a message. The test only requires an error status (>= 400) and the message text.
+}

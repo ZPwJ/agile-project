@@ -39,6 +39,7 @@ public class Issue extends Auditable implements Serializable {
 
     private String description;
 
+    /** Story points. {@code null} means "not estimated"; negative values are rejected by IssueServiceImpl. */
     private Integer estimation;
 
     private String reporterID;

@@ -1,0 +1,26 @@
+meta {
+  name: Create project Y
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{baseUrl}}/api/scrum-project
+  body: json
+  auth: inherit
+}
+
+body:json {
+  { "name": "Scenario {{runId}} Y", "description": "Bruno scenario", "projectGoal": "test" }
+}
+
+script:post-response {
+  if (res.status === 201) { bru.setVar("py", res.body.projectID); }
+}
+
+tests {
+  test("project created", function () {
+    expect(res.status).to.equal(201);
+    expect(res.body.projectID).to.be.a("number");
+  });
+}

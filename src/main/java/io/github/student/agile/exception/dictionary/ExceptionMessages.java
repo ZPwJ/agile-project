@@ -16,6 +16,9 @@ public interface ExceptionMessages {
     String SPRINT_NAME_NOT_UNIQUE = "The sprint name is not unique within the scope of the project";
     String STATUS_FLOW_ORDER_VIOLATION = "The principles of proper status flow violation";
     String SPRINT_START_DATE_IN_THE_FUTURE = "The start sprint date is in the future. It is not allowed to start sprint now";
+    String SPRINT_END_DATE_BEFORE_START_DATE = "The sprint end date cannot be earlier than its start date";
+    String NEGATIVE_ESTIMATION = "Issue estimation cannot be negative";
+    String FINISHED_SPRINT_CANNOT_BE_DELETED = "A finished sprint cannot be deleted because its results are used by reports";
     String SPRINT_ALREADY_STARTED = "Given Sprint is lasting at this point of time";
     String NO_ACTIVE_SPRINT_IN_PROJECT = "There is no active sprint int the project";
     String ACTIVE_SPRINT_EXISTS = "There is already exists active sprint";

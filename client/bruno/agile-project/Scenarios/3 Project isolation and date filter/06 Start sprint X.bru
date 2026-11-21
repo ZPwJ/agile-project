@@ -1,0 +1,15 @@
+meta {
+  name: Start sprint
+  type: http
+  seq: 6
+}
+
+patch {
+  url: {{baseUrl}}/api/sprint/start/{{sx}}
+  body: none
+  auth: inherit
+}
+
+tests {
+  test("sprint started", function () { expect(res.status).to.equal(200); });
+}

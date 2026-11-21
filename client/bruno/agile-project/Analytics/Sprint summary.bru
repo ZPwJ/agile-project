@@ -1,0 +1,28 @@
+meta {
+  name: Sprint summary
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/analytics/sprints/{{sprintId}}/summary
+  body: none
+  auth: inherit
+}
+
+tests {
+  test("200 and the summary shape", function () {
+    expect(res.status).to.equal(200);
+    const b = res.body;
+    expect(b.sprintId).to.equal(Number(bru.getEnvVar("sprintId")));
+    ["sprintName", "projectId", "state", "unit", "totalTasks", "completedTasks",
+     "incompleteTasks", "unestimatedTasks", "velocity"]
+      .forEach(k => expect(b, k).to.have.property(k));
+  });
+  test("task counts add up", function () {
+    expect(res.body.completedTasks + res.body.incompleteTasks).to.equal(res.body.totalTasks);
+  });
+  test("state is a known value", function () {
+    expect(["PLANNED", "ACTIVE", "FINISHED"]).to.include(res.body.state);
+  });
+}

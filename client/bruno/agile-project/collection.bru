@@ -1,0 +1,53 @@
+auth {
+  mode: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+script:pre-request {
+  // Keeps accessToken valid: fetches a token when there is none or when it is about to expire
+  // (Keycloak tokens last about 5 minutes). Credentials are read from the .env file next to this collection (see .env.example).
+  // Only plain JavaScript is used (no URLSearchParams) because Bruno's safe-mode sandbox does not provide it.
+  const axios = require("axios");
+
+  const isTokenRequest = String(req.getUrl()).includes("/protocol/openid-connect/token");
+  const expiresAt = Number(bru.getEnvVar("accessTokenExpiresAt") || 0);
+  const needsToken = !bru.getEnvVar("accessToken") || Date.now() > expiresAt - 30000;
+
+  if (!isTokenRequest && needsToken) {
+    const clientSecret = bru.getProcessEnv("BRUNO_CLIENT_SECRET");
+    const password = bru.getProcessEnv("BRUNO_PASSWORD");
+    if (!clientSecret || !password) {
+      throw new Error("Create client/bruno/agile-project/.env from .env.example and set BRUNO_CLIENT_SECRET " +
+        "and BRUNO_PASSWORD (values: see client/http/http-client.env.json), then reload the collection.");
+    }
+
+    const fields = {
+      grant_type: "password",
+      client_id: bru.getEnvVar("clientId"),
+      client_secret: clientSecret,
+      username: bru.getEnvVar("username"),
+      password: password
+    };
+    const body = Object.keys(fields)
+      .map(function (k) { return encodeURIComponent(k) + "=" + encodeURIComponent(fields[k]); })
+      .join("&");
+    const url = bru.getEnvVar("authUrl") + "/realms/" + bru.getEnvVar("realm") + "/protocol/openid-connect/token";
+
+    let response;
+    try {
+      response = await axios.post(url, body, {
+        headers: { "Content-Type": "application/x-www-form-urlencoded" }
+      });
+    } catch (e) {
+      const status = e.response ? e.response.status : "no response";
+      throw new Error("Token request failed (" + status + "). 401 means a wrong BRUNO_CLIENT_SECRET, username or BRUNO_PASSWORD; " +
+        "otherwise check that Keycloak is running at " + bru.getEnvVar("authUrl") + ".");
+    }
+
+    bru.setEnvVar("accessToken", response.data.access_token);
+    bru.setEnvVar("accessTokenExpiresAt", String(Date.now() + response.data.expires_in * 1000));
+  }
+}

@@ -1,0 +1,27 @@
+meta {
+  name: Summary after stop
+  type: http
+  seq: 17
+}
+
+get {
+  url: {{baseUrl}}/api/analytics/sprints/{{s1}}/summary
+  body: none
+  auth: inherit
+}
+
+tests {
+  test("finished sprint report from the stop-time snapshot", function () {
+    expect(res.status).to.equal(200);
+    const b = res.body;
+    expect(b.state).to.equal("FINISHED");
+    expect(b.projectId).to.equal(bru.getVar("p1"));
+    expect(b.totalTasks).to.equal(3);
+    expect(b.completedTasks).to.equal(1);
+    expect(b.incompleteTasks).to.equal(2);
+    expect(b.unestimatedTasks).to.equal(1);
+    expect(b.velocity).to.equal(5);
+    expect(b.incompleteEstimate).to.equal(3);
+    expect(b.endDate).to.be.a("string");
+  });
+}

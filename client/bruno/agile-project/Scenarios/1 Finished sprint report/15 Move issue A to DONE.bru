@@ -1,0 +1,15 @@
+meta {
+  name: Move issue A to DONE
+  type: http
+  seq: 15
+}
+
+patch {
+  url: {{baseUrl}}/api/issue/{{i1}}/status/5
+  body: none
+  auth: inherit
+}
+
+tests {
+  test("status changed", function () { expect(res.status).to.equal(200); });
+}

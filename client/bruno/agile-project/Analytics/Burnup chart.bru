@@ -1,0 +1,40 @@
+meta {
+  name: Burnup chart
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/api/analytics/sprints/{{sprintId}}/burnup
+  body: none
+  auth: inherit
+}
+
+tests {
+  test("200 and the chart shape", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body.points).to.be.an("array").and.not.empty;
+    expect(["COMPLETE", "PARTIAL"]).to.include(res.body.dataCompleteness);
+  });
+  test("completed points never go down", function () {
+    const c = res.body.points.map(p => p.completed);
+    for (let i = 1; i < c.length; i++) { expect(c[i]).to.be.at.least(c[i - 1]); }
+  });
+  test("scope is constant and not below completed", function () {
+    const scope = res.body.points[0].scope;
+    res.body.points.forEach(p => {
+      expect(p.scope).to.equal(scope);
+      expect(p.completed).to.be.at.most(p.scope);
+    });
+  });
+  test("scope is flagged as not historical", function () {
+    expect(res.body.warnings.join(" ")).to.contain("SCOPE_NOT_HISTORICAL");
+  });
+  test("last point equals the velocity (run Sprint velocity first)", function () {
+    const v = bru.getVar("velocity");
+    if (v === undefined || v === null) { return; }
+    if (res.body.warnings.join(" ").includes("UNDATED_COMPLETION")) { return; }
+    const last = res.body.points[res.body.points.length - 1];
+    expect(last.completed).to.equal(v);
+  });
+}

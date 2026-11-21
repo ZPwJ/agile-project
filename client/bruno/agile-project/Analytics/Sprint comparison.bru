@@ -1,0 +1,33 @@
+meta {
+  name: Sprint comparison
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{baseUrl}}/api/analytics/projects/{{projectId}}/sprints/comparison
+  body: none
+  auth: inherit
+}
+
+tests {
+  test("200 and a list of rows", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body).to.be.an("array").and.not.empty;
+  });
+  test("every row has the report fields", function () {
+    res.body.forEach(r => {
+      ["sprintId", "sprintName", "projectId", "startDate", "endDate", "state",
+       "completedTasks", "incompleteTasks", "velocity", "unit"]
+        .forEach(k => expect(r, k).to.have.property(k));
+      expect(r.projectId).to.equal(Number(bru.getEnvVar("projectId")));
+    });
+  });
+  test("sorted by start date", function () {
+    const starts = res.body.map(r => r.startDate).filter(Boolean);
+    expect(starts).to.deep.equal([...starts].sort());
+  });
+  test("dates are in Europe/Warsaw (+01:00 or +02:00)", function () {
+    res.body.forEach(r => { if (r.startDate) { expect(r.startDate).to.match(/[+-]0[12]:00$/); } });
+  });
+}

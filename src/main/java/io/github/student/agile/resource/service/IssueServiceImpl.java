@@ -7,7 +7,6 @@ import io.github.student.agile.resource.domain.IssuePriority;
 import io.github.student.agile.resource.domain.IssueStatus;
 import io.github.student.agile.resource.domain.IssueStatusHistory;
 import io.github.student.agile.resource.repository.IssueStatusHistoryRepository;
-import java.time.Instant;
 import io.github.student.agile.resource.domain.IssueType;
 import io.github.student.agile.resource.domain.Project;
 import io.github.student.agile.resource.domain.Sprint;
@@ -27,6 +26,7 @@ import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;

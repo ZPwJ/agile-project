@@ -1,31 +1,28 @@
-
 package io.github.student.agile.resource.controller.analytics;
 
-import io.github.student.agile.resource.analytics.reports.SprintComparisonService;
 import io.github.student.agile.resource.analytics.reports.SprintComparisonCsvService;
+import io.github.student.agile.resource.analytics.reports.SprintComparisonService;
 import io.github.student.agile.resource.dto.SprintComparisonRowDTO;
-
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/analytics/projects/{projectId}/sprints")
+@RequiredArgsConstructor
 public class SprintReportRestController {
 
     private final SprintComparisonService comparisonService;
     private final SprintComparisonCsvService csvService;
-
-    public SprintReportRestController(
-            SprintComparisonService comparisonService,
-            SprintComparisonCsvService csvService) {
-        this.comparisonService = comparisonService;
-        this.csvService = csvService;
-    }
 
     @GetMapping("/comparison")
     public List<SprintComparisonRowDTO> comparison(
@@ -33,26 +30,7 @@ public class SprintReportRestController {
             @RequestParam(required = false) String from,
             @RequestParam(required = false) String to) {
 
-        return comparisonService.compare(projectId, from, to)
-                .stream()
-                .map(result -> {
-                    var sprint = result.sprint();
-                    var metrics = result.metrics();
-
-                    return new SprintComparisonRowDTO(
-                            sprint.getId(),
-                            sprint.getName(),
-                            projectId,
-                            sprint.getStartDate(),
-                            sprint.getEndDate(),
-                            metrics.state(),
-                            metrics.completedTasks(),
-                            metrics.incompleteTasks(),
-                            metrics.completedEstimate(),
-                            metrics.unit()
-                    );
-                })
-                .toList();
+        return comparisonService.compareRows(projectId, from, to);
     }
 
     @GetMapping(
@@ -63,10 +41,8 @@ public class SprintReportRestController {
             @RequestParam(required = false) String from,
             @RequestParam(required = false) String to) {
 
-        List<SprintComparisonRowDTO> rows =
-                comparison(projectId, from, to);
-
-        byte[] csv = csvService.generate(rows);
+        byte[] csv = csvService.generate(
+                comparisonService.compareRows(projectId, from, to));
 
         return ResponseEntity.ok()
                 .header(

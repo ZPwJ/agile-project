@@ -6,8 +6,8 @@ import io.github.student.agile.resource.analytics.error.ProjectNotFoundException
 import io.github.student.agile.resource.analytics.metrics.SprintMetrics;
 import io.github.student.agile.resource.analytics.metrics.SprintMetricsProvider;
 import io.github.student.agile.resource.domain.Sprint;
+import io.github.student.agile.resource.dto.SprintComparisonRowDTO;
 import io.github.student.agile.resource.repository.ProjectRepository;
-
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 @Service
 public class SprintComparisonService {
@@ -86,9 +87,52 @@ public class SprintComparisonService {
         return sprints.stream()
                 .map(sprint -> new SprintComparisonResult(
                         sprint,
-                        metrics.get(sprint.getId())
+                        Objects.requireNonNull(
+                                metrics.get(sprint.getId()),
+                                "No metrics returned for sprint "
+                                        + sprint.getId())
                 ))
                 .toList();
+    }
+
+    /**
+     * Same as {@link #compare}, mapped to report rows. Sprint dates are
+     * always expressed in Europe/Warsaw, whatever zone the database or the
+     * JVM hands back.
+     */
+    @Transactional(readOnly = true)
+    public List<SprintComparisonRowDTO> compareRows(
+            Integer projectId, String from, String to) {
+
+        return compare(projectId, from, to).stream()
+                .map(result -> toRow(projectId, result))
+                .toList();
+    }
+
+    private SprintComparisonRowDTO toRow(
+            Integer projectId, SprintComparisonResult result) {
+
+        Sprint sprint = result.sprint();
+        SprintMetrics metrics = result.metrics();
+
+        return new SprintComparisonRowDTO(
+                sprint.getId(),
+                sprint.getName(),
+                projectId,
+                inReportZone(sprint.getStartDate()),
+                inReportZone(sprint.getEndDate()),
+                metrics.state(),
+                metrics.completedTasks(),
+                metrics.incompleteTasks(),
+                metrics.completedEstimate(),
+                metrics.unit()
+        );
+    }
+
+    private ZonedDateTime inReportZone(ZonedDateTime value) {
+        return value == null
+                ? null
+                : value.withZoneSameInstant(REPORT_ZONE);
     }
 
     private LocalDate parseDate(String value, String name) {

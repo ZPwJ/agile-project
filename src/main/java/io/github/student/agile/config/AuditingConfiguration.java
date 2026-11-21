@@ -19,13 +19,13 @@ public class AuditingConfiguration {
     private final UserService userService;
 
     @Bean("auditorProvider")
-    @Profile("!dev")
+    @Profile("!demo")
     public AuditorAware<String> auditorProvider() {
         return new AuditAwareImpl(userService);
     }
 
     @Bean("auditorProvider")
-    @Profile("dev")
+    @Profile("demo")
     public AuditorAware<String> demoAuditorProvider() {
         return () -> Optional.of("demo");
     }

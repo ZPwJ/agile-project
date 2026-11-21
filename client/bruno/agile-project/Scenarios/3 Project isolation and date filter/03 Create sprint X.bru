@@ -1,0 +1,27 @@
+meta {
+  name: Create sprint
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/api/sprint
+  body: json
+  auth: inherit
+}
+
+body:json {
+  { "name": "Sprint X {{runId}}", "projectID": {{px}}, "sprintGoal": "test" }
+}
+
+script:post-response {
+  if (res.status === 201) { bru.setVar("sx", res.body.id); }
+}
+
+tests {
+  test("sprint created and not active", function () {
+    expect(res.status).to.equal(201);
+    expect(res.body.id).to.be.a("number");
+    expect(res.body.active).to.equal(false);
+  });
+}

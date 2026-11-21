@@ -1,0 +1,19 @@
+meta {
+  name: CSV of a project without sprints
+  type: http
+  seq: 14
+}
+
+get {
+  url: {{baseUrl}}/api/analytics/projects/{{p3}}/sprints/comparison.csv
+  body: none
+  auth: inherit
+}
+
+tests {
+  test("header only", function () {
+    expect(res.status).to.equal(200);
+    expect(String(res.body)).to.equal(
+      "projectId,sprintId,sprintName,startDate,endDate,completedTasks,incompleteTasks,velocity\r\n");
+  });
+}

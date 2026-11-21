@@ -1,0 +1,26 @@
+meta {
+  name: Create issue A
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/issue
+  body: json
+  auth: inherit
+}
+
+body:json {
+  { "name": "A", "description": "test", "projectID": {{px}}, "estimation": 2 }
+}
+
+script:post-response {
+  if (res.status === 201) { bru.setVar("ix", res.body.issueID); }
+}
+
+tests {
+  test("issue created in TO_DO", function () {
+    expect(res.status).to.equal(201);
+    expect(res.body.issueStatusID).to.equal(1);
+  });
+}

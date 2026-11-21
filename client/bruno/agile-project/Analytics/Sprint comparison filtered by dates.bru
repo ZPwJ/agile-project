@@ -1,0 +1,30 @@
+meta {
+  name: Sprint comparison filtered by dates
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{baseUrl}}/api/analytics/projects/{{projectId}}/sprints/comparison?from=2026-03-01&to=2026-03-10
+  body: none
+  auth: inherit
+}
+
+params:query {
+  from: 2026-03-01
+  to: 2026-03-10
+}
+
+tests {
+  test("200 and only overlapping sprints", function () {
+    expect(res.status).to.equal(200);
+    res.body.forEach(r => {
+      expect(r.startDate.substring(0, 10) <= "2026-03-10").to.equal(true);
+      if (r.endDate) { expect(r.endDate.substring(0, 10) >= "2026-03-01").to.equal(true); }
+    });
+  });
+}
+
+docs {
+  Uses the demo data (Demo Alpha): only Sprint 2 overlaps 2026-03-01..2026-03-10.
+}

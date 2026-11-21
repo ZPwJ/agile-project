@@ -1,0 +1,18 @@
+meta {
+  name: Reversed date range is rejected
+  type: http
+  seq: 21
+}
+
+get {
+  url: {{baseUrl}}/api/analytics/projects/{{px}}/sprints/comparison?from=2026-04-01&to=2026-03-01
+  body: none
+  auth: inherit
+}
+
+tests {
+  test("400 INVALID_PARAMETER", function () {
+    expect(res.status).to.equal(400);
+    expect(res.body.code).to.equal("INVALID_PARAMETER");
+  });
+}

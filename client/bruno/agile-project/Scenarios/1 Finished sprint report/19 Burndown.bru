@@ -1,0 +1,23 @@
+meta {
+  name: Burndown
+  type: http
+  seq: 19
+}
+
+get {
+  url: {{baseUrl}}/api/analytics/sprints/{{s1}}/burndown
+  body: none
+  auth: inherit
+}
+
+tests {
+  test("remaining work ends at the open estimate", function () {
+    expect(res.status).to.equal(200);
+    const last = res.body.points[res.body.points.length - 1];
+    expect(last.remaining).to.equal(3);
+    res.body.points.forEach(p => expect(p.remaining).to.be.at.least(0));
+  });
+  test("unestimated task is reported, not hidden", function () {
+    expect(res.body.warnings.join(" ")).to.contain("UNESTIMATED_TASKS");
+  });
+}

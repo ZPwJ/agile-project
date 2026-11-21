@@ -1,0 +1,28 @@
+meta {
+  name: Negative estimation is rejected
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{baseUrl}}/api/issue
+  body: json
+  auth: inherit
+}
+
+body:json {
+  { "name": "Negative", "description": "test", "estimation": -1, "projectID": {{p2}} }
+}
+
+tests {
+  test("rejected with an error status", function () {
+    expect(res.status).to.be.at.least(400);
+  });
+  test("message explains why", function () {
+    expect(String(res.body.message)).to.contain("cannot be negative");
+  });
+}
+
+docs {
+  The existing endpoints report business-rule violations as HTTP 500 with a message. The test only requires an error status (>= 400) and the message text.
+}

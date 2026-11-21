@@ -1,0 +1,23 @@
+meta {
+  name: Summary while active
+  type: http
+  seq: 11
+}
+
+get {
+  url: {{baseUrl}}/api/analytics/sprints/{{s1}}/summary
+  body: none
+  auth: inherit
+}
+
+tests {
+  test("live counts for an active sprint", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body.state).to.equal("ACTIVE");
+    expect(res.body.totalTasks).to.equal(3);
+    expect(res.body.completedTasks).to.equal(0);
+    expect(res.body.velocity).to.equal(0);
+    expect(res.body.incompleteEstimate).to.equal(8);
+    expect(res.body.unestimatedTasks).to.equal(1);
+  });
+}

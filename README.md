@@ -135,7 +135,7 @@ Once the services have started, the main endpoints are:
 |---|---|
 | Resource server | [http://localhost:8081](http://localhost:8081) |
 | Authentication server | [http://localhost:8080](http://localhost:8080) |
-| OpenAPI UI | [http://localhost:8081/docs.html](http://localhost:8081/docs.html) |
+| OpenAPI UI (Swagger) | [http://localhost:8081/swagger-ui/index.html](http://localhost:8081/swagger-ui/index.html) |
 | OpenAPI specification | [http://localhost:8081/api-docs](http://localhost:8081/api-docs) |
 
 The API may require authentication for protected endpoints.
@@ -176,4 +176,84 @@ The imported configuration defines the following realm and client:
 
 ### Sample accounts
 
-The realm
+The imported realm contains two sample accounts for local development:
+
+| Account | Client roles |
+|---|---|
+| `admin@agile.local` | `sm`, `client_user` |
+| `developer@agile.local` | `dev`, `client_user` |
+
+Their passwords and the client secret are defined in `infrastructure/auth-server/realm-export.json`.
+Do not reuse them outside a local environment.
+
+### Getting an access token
+
+```bash
+curl -X POST http://localhost:8080/realms/agile-project/protocol/openid-connect/token \
+  -d grant_type=password \
+  -d client_id=agile-project-server \
+  -d client_secret=<client secret> \
+  -d username=admin@agile.local \
+  -d password=<password>
+```
+
+Send the `access_token` from the response as `Authorization: Bearer <token>`.
+In the OpenAPI UI use the **Authorize** button and paste the token.
+Ready-made requests are in `client/http/client.http` and in the Bruno collection (see [API tests](#api-tests-bruno)).
+
+## Sprint analytics API
+
+All endpoints require a bearer token. Errors use the body `{"code", "message", "timestamp"}`.
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/analytics/sprints/{sprintId}/summary` | Sprint report (WF-1) |
+| `GET /api/analytics/sprints/{sprintId}/velocity` | Velocity (WF-2) |
+| `GET /api/analytics/sprints/{sprintId}/burndown` | Burndown chart data (WF-3) |
+| `GET /api/analytics/sprints/{sprintId}/burnup` | Burnup chart data (WF-4) |
+| `GET /api/analytics/projects/{projectId}/sprints/comparison?from=&to=` | Sprint comparison with date filter (WF-5, WF-6) |
+| `GET /api/analytics/projects/{projectId}/sprints/comparison.csv?from=&to=` | CSV export of the comparison (WF-7) |
+
+The backend returns data only; drawing the charts is up to the client.
+Calculation rules, edge cases and examples are described in `docs/analytics/`:
+
+- `db-schema.md` - schema additions and ownership
+- `wf1-wf2-metrics.md` - summary and velocity
+- `wf3-wf4-charts.md` - burndown and burnup
+- `wf5-wf7-reports-csv.md` - comparison, filtering, CSV and demo data
+
+## Running locally without Docker for the application
+
+The databases and Keycloak can run in Docker while the application runs on your machine (Java 21 required):
+
+```bash
+docker compose -f compose.yaml up -d app-db auth-db auth-server
+mvn spring-boot:run
+```
+
+### Demo data
+
+The `demo` profile loads two demo projects (Demo Alpha and Demo Beta) with finished and active sprints.
+It uses a separate database, `agiledb_demo`. Create it once, then start the application with the profile:
+
+```bash
+docker compose -f compose.yaml exec app-db psql -U appuser -d agiledb -c "CREATE DATABASE agiledb_demo;"
+mvn spring-boot:run -Dspring-boot.run.profiles=demo
+```
+
+Do not use the `demo` profile against a production database.
+
+## Tests and coverage
+
+```bash
+mvn clean verify
+```
+
+The build runs all tests and the JaCoCo coverage check.
+The check requires at least 75% instruction coverage for the `analytics.reports` and `analytics.charts` packages.
+The HTML report is written to `target/site/jacoco/index.html`.
+
+## API tests (Bruno)
+
+The folder `client/bruno/agile-project` contains a [Bruno](https://www.usebruno.com/) collection with requests and
+assertions for the analytics endpoints. See `client/bruno/agile-project/README.md` for the setup.

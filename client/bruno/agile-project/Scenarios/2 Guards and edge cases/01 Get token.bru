@@ -1,0 +1,36 @@
+meta {
+  name: Get token
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{authUrl}}/realms/{{realm}}/protocol/openid-connect/token
+  body: formUrlEncoded
+  auth: none
+}
+
+body:form-urlencoded {
+  grant_type: password
+  client_id: {{clientId}}
+  client_secret: {{process.env.BRUNO_CLIENT_SECRET}}
+  username: {{username}}
+  password: {{process.env.BRUNO_PASSWORD}}
+}
+
+script:pre-request {
+  bru.setVar("runId", String(Date.now()));
+}
+
+script:post-response {
+  if (res.status === 200) { bru.setEnvVar("accessToken", res.body.access_token);
+    bru.setEnvVar("accessTokenExpiresAt", String(Date.now() + res.body.expires_in * 1000)); }
+}
+
+tests {
+  test("token issued", function () { expect(res.status).to.equal(200); });
+}
+
+docs {
+  Also sets the unique runId used in names. Tokens last about 5 minutes and are refreshed automatically by collection.bru.
+}

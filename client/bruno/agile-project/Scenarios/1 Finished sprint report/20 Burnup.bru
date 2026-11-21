@@ -1,0 +1,27 @@
+meta {
+  name: Burnup
+  type: http
+  seq: 20
+}
+
+get {
+  url: {{baseUrl}}/api/analytics/sprints/{{s1}}/burnup
+  body: none
+  auth: inherit
+}
+
+tests {
+  test("completed work and scope at the end", function () {
+    expect(res.status).to.equal(200);
+    const last = res.body.points[res.body.points.length - 1];
+    expect(last.completed).to.equal(5);
+    expect(last.scope).to.equal(8);
+  });
+  test("last burnup point equals the velocity", function () {
+    const last = res.body.points[res.body.points.length - 1];
+    expect(last.completed).to.equal(5);
+  });
+  test("scope is flagged as not historical", function () {
+    expect(res.body.warnings.join(" ")).to.contain("SCOPE_NOT_HISTORICAL");
+  });
+}

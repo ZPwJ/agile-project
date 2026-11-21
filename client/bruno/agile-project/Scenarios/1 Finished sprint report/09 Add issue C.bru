@@ -1,0 +1,15 @@
+meta {
+  name: Add issue C to sprint
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{baseUrl}}/api/sprint/{{s1}}/issue/{{i3}}
+  body: none
+  auth: inherit
+}
+
+tests {
+  test("issue added", function () { expect(res.status).to.equal(200); });
+}

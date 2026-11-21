@@ -1,0 +1,18 @@
+meta {
+  name: Filtered CSV respects the filter
+  type: http
+  seq: 20
+}
+
+get {
+  url: {{baseUrl}}/api/analytics/projects/{{px}}/sprints/comparison.csv?from=2100-01-01&to=2100-12-31
+  body: none
+  auth: inherit
+}
+
+tests {
+  test("header only", function () {
+    expect(res.status).to.equal(200);
+    expect(String(res.body).split("\r\n").filter(Boolean).length).to.equal(1);
+  });
+}

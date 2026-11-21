@@ -1,0 +1,17 @@
+meta {
+  name: Request without token is rejected
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/analytics/sprints/{{sprintId}}/summary
+  body: none
+  auth: none
+}
+
+tests {
+  test("401 without a bearer token", function () {
+    expect(res.status).to.equal(401);
+  });
+}

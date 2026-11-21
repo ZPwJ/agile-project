@@ -1,0 +1,31 @@
+meta {
+  name: Sprint comparison CSV
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{baseUrl}}/api/analytics/projects/{{projectId}}/sprints/comparison.csv
+  body: none
+  auth: inherit
+}
+
+tests {
+  test("200 with a CSV content type and a download name", function () {
+    expect(res.status).to.equal(200);
+    expect(res.headers["content-type"]).to.contain("text/csv");
+    expect(res.headers["content-disposition"]).to.contain("attachment");
+    expect(res.headers["content-disposition"]).to.contain(".csv");
+  });
+  test("header row and CRLF line endings", function () {
+    const text = String(res.body);
+    const header = "projectId,sprintId,sprintName,startDate,endDate,completedTasks,incompleteTasks,velocity";
+    expect(text.startsWith(header + "\r\n")).to.equal(true);
+    expect(text.endsWith("\r\n")).to.equal(true);
+  });
+  test("every data row has at least 8 columns", function () {
+    String(res.body).split("\r\n").filter(Boolean).slice(1).forEach(line => {
+      expect(line.split(",").length, line).to.be.at.least(8);
+    });
+  });
+}

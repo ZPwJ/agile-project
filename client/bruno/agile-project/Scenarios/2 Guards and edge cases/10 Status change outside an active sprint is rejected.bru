@@ -1,0 +1,24 @@
+meta {
+  name: Status change outside an active sprint is rejected
+  type: http
+  seq: 10
+}
+
+patch {
+  url: {{baseUrl}}/api/issue/{{i4}}/status/5
+  body: none
+  auth: inherit
+}
+
+tests {
+  test("rejected with an error status", function () {
+    expect(res.status).to.be.at.least(400);
+  });
+  test("message explains why", function () {
+    expect(String(res.body.message)).to.contain("not within active sprint");
+  });
+}
+
+docs {
+  The existing endpoints report business-rule violations as HTTP 500 with a message. The test only requires an error status (>= 400) and the message text.
+}

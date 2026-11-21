@@ -1,0 +1,15 @@
+meta {
+  name: Move issue A to CODE_REVIEW
+  type: http
+  seq: 13
+}
+
+patch {
+  url: {{baseUrl}}/api/issue/{{i1}}/status/3
+  body: none
+  auth: inherit
+}
+
+tests {
+  test("status changed", function () { expect(res.status).to.equal(200); });
+}

@@ -1,0 +1,27 @@
+meta {
+  name: CSV export
+  type: http
+  seq: 22
+}
+
+get {
+  url: {{baseUrl}}/api/analytics/projects/{{p1}}/sprints/comparison.csv
+  body: none
+  auth: inherit
+}
+
+tests {
+  test("CSV response", function () {
+    expect(res.status).to.equal(200);
+    expect(res.headers["content-type"]).to.contain("text/csv");
+    expect(res.headers["content-disposition"]).to.contain("sprint-comparison-" + bru.getVar("p1") + ".csv");
+  });
+  test("name with comma, quotes and a leading = is escaped and neutralised", function () {
+    const text = String(res.body);
+    const runId = bru.getVar("runId");
+    expect(text).to.contain(',"\'=Sprint, ""one"" ' + runId + '",');
+  });
+  test("row carries counts and velocity", function () {
+    expect(String(res.body)).to.contain(",1,2,5\r\n");
+  });
+}

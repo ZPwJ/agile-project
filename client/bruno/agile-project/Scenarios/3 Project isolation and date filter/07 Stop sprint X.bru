@@ -1,0 +1,15 @@
+meta {
+  name: Stop sprint
+  type: http
+  seq: 7
+}
+
+patch {
+  url: {{baseUrl}}/api/sprint/project/{{px}}/stop
+  body: none
+  auth: inherit
+}
+
+tests {
+  test("sprint stopped", function () { expect(res.status).to.equal(200); });
+}

@@ -1,0 +1,15 @@
+meta {
+  name: Move issue A to IN_PROGRESS
+  type: http
+  seq: 12
+}
+
+patch {
+  url: {{baseUrl}}/api/issue/{{i1}}/status/2
+  body: none
+  auth: inherit
+}
+
+tests {
+  test("status changed", function () { expect(res.status).to.equal(200); });
+}

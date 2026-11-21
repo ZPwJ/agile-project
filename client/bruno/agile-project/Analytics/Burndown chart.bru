@@ -1,0 +1,31 @@
+meta {
+  name: Burndown chart
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/analytics/sprints/{{sprintId}}/burndown
+  body: none
+  auth: inherit
+}
+
+tests {
+  test("200 and the chart shape", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body.points).to.be.an("array").and.not.empty;
+    expect(["COMPLETE", "PARTIAL"]).to.include(res.body.dataCompleteness);
+    expect(res.body.warnings).to.be.an("array");
+  });
+  test("points are in chronological order", function () {
+    const dates = res.body.points.map(p => p.date);
+    expect(dates).to.deep.equal([...dates].sort());
+  });
+  test("remaining is never negative", function () {
+    res.body.points.forEach(p => expect(p.remaining).to.be.at.least(0));
+  });
+  test("remaining never goes up", function () {
+    const r = res.body.points.map(p => p.remaining);
+    for (let i = 1; i < r.length; i++) { expect(r[i]).to.be.at.most(r[i - 1]); }
+  });
+}

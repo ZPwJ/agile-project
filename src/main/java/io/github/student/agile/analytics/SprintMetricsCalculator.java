@@ -5,7 +5,12 @@ import io.github.student.agile.resource.domain.IssueStatus;
 import io.github.student.agile.resource.domain.Sprint;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Date;
+import java.util.List;
 import java.util.Objects;
 
 import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.DONE;
@@ -85,5 +90,97 @@ public class SprintMetricsCalculator {
         }
 
         return new SprintMetrics(completed + incomplete, completed, incomplete, completedEstimation, incompleteEstimation);
+    }
+
+    /**
+     * Calculates the daily burndown points (WF-3) for a sprint.
+     *
+     * <p>Rules:
+     * <ul>
+     *     <li>Points cover every day from {@code startDate} to {@code endDate} (or today for an active sprint).</li>
+     *     <li>A DONE issue is completed according to {@code lastModifiedDate}.</li>
+     *     <li>Scope is the current sum of estimations of issues in the sprint (no history).</li>
+     *     <li>Remaining work is never negative (>= 0).</li>
+     * </ul>
+     */
+    public List<BurndownPoint> calculateBurndown(Sprint sprint, Collection<Issue> issues) {
+        ZoneId zone = resolveZone(sprint);
+        return calculateBurndown(sprint, issues, LocalDate.now(zone));
+    }
+
+    public List<BurndownPoint> calculateBurndown(Sprint sprint, Collection<Issue> issues, LocalDate today) {
+        Objects.requireNonNull(sprint, "sprint must not be null");
+        if (sprint.getStartDate() == null) {
+            return List.of();
+        }
+
+        ZoneId zone = resolveZone(sprint);
+        LocalDate startLocalDate = sprint.getStartDate().toLocalDate();
+
+        LocalDate endLocalDate;
+        if (Boolean.TRUE.equals(sprint.getActive())) {
+            endLocalDate = today;
+        } else if (sprint.getEndDate() != null) {
+            endLocalDate = sprint.getEndDate().toLocalDate();
+        } else {
+            endLocalDate = today;
+        }
+
+        if (startLocalDate.isAfter(endLocalDate)) {
+            return List.of();
+        }
+
+        SprintMetrics metrics = calculate(sprint, issues);
+        int incompleteEstimation = metrics.incompleteEstimation();
+        if (Boolean.TRUE.equals(sprint.getIsDone()) && sprint.getIncompleteEstimation() != null) {
+            incompleteEstimation += sprint.getIncompleteEstimation();
+        }
+        int totalScope = metrics.completedEstimation() + incompleteEstimation;
+
+        List<BurndownPoint> points = new ArrayList<>();
+        for (LocalDate d = startLocalDate; !d.isAfter(endLocalDate); d = d.plusDays(1)) {
+            int completedUpToDay = 0;
+            if (issues != null) {
+                for (Issue issue : issues) {
+                    if (issue == null || !belongsTo(issue, sprint)) {
+                        continue;
+                    }
+                    if (isCompleted(issue)) {
+                        LocalDate completionDate = resolveCompletionDate(issue, startLocalDate, zone);
+                        if (!completionDate.isAfter(d)) {
+                            completedUpToDay += estimationOrZero(issue);
+                        }
+                    }
+                }
+            }
+            int remainingWork = Math.max(0, totalScope - completedUpToDay);
+            points.add(new BurndownPoint(d, remainingWork));
+        }
+
+        return points;
+    }
+
+    private LocalDate resolveCompletionDate(Issue issue, LocalDate fallbackDate, ZoneId zone) {
+        if (issue.getLastModifiedDate() != null) {
+            return toLocalDate(issue.getLastModifiedDate(), zone);
+        }
+        if (issue.getCreatedDate() != null) {
+            return toLocalDate(issue.getCreatedDate(), zone);
+        }
+        return fallbackDate;
+    }
+
+    private LocalDate toLocalDate(Date date, ZoneId zone) {
+        if (date instanceof java.sql.Date sqlDate) {
+            return sqlDate.toLocalDate();
+        }
+        return date.toInstant().atZone(zone).toLocalDate();
+    }
+
+    private ZoneId resolveZone(Sprint sprint) {
+        if (sprint != null && sprint.getStartDate() != null && sprint.getStartDate().getZone() != null) {
+            return sprint.getStartDate().getZone();
+        }
+        return ZoneId.systemDefault();
     }
 }

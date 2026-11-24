@@ -75,6 +75,47 @@ class SprintAnalyticsIntegrationTest {
         mvc.perform(get("/api/analytics/sprints/0/report"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status").value(400));
+        mvc.perform(get("/api/analytics/sprints/999999/burndown"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.status").value(404))
+                .andExpect(jsonPath("$.message").value("Sprint not found: 999999"));
+        mvc.perform(get("/api/analytics/sprints/abc/burndown"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.message").exists());
+        mvc.perform(get("/api/analytics/sprints/0/burndown"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400));
+    }
+
+    @Test
+    void burndownEmptySprintReturnsPointsWithZeroRemaining() throws Exception {
+        Sprint sprint = sprintRepository.save(createSprintEntity(project, false));
+        mvc.perform(get("/api/analytics/sprints/{id}/burndown", sprint.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray())
+                .andExpect(jsonPath("$[0].date").exists())
+                .andExpect(jsonPath("$[0].remainingWork").value(0))
+                .andExpect(jsonPath("$[0].remaining").value(0))
+                .andExpect(jsonPath("$[0].unit").value("STORY_POINTS"));
+    }
+
+    @Test
+    void burndownTracksProgressOfDoneTasks() throws Exception {
+        Sprint sprint = sprintRepository.save(createSprintEntity(project, false));
+        Issue done1 = issue(sprint, DONE.getStatusID(), 5);
+        Issue done2 = issue(sprint, DONE.getStatusID(), 3);
+        Issue todo = issue(sprint, IN_PROGRESS.getStatusID(), 8);
+        sprint.setSprintIssues(new HashSet<>(Set.of(done1, done2, todo)));
+
+        sprintService.startSprint(sprint.getId());
+
+        mvc.perform(get("/api/analytics/sprints/{id}/burndown", sprint.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray())
+                .andExpect(jsonPath("$[0].date").exists())
+                .andExpect(jsonPath("$[0].remainingWork").exists())
+                .andExpect(jsonPath("$[0].unit").value("STORY_POINTS"));
     }
 
     @Test
@@ -120,6 +161,10 @@ class SprintAnalyticsIntegrationTest {
         assertReport(sprint.getId());
         mvc.perform(get("/api/analytics/sprints/{id}/report", sprint.getId()))
                 .andExpect(jsonPath("$.endDate").exists());
+        mvc.perform(get("/api/analytics/sprints/{id}/burndown", sprint.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray())
+                .andExpect(jsonPath("$[-1:].remainingWork").value(8));
     }
 
     private void assertReport(Integer id) throws Exception {

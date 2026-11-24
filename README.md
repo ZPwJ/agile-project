@@ -194,15 +194,34 @@ The `sprint` table gains nullable columns `end_date`, `initial_issue_count`, `in
 to add them. Existing data cannot supply historical snapshots: a completed sprint without an incomplete
 snapshot cannot produce a reliable report and fails explicitly instead of reporting invented zeros.
 
+### Sprint burndown chart (WF-3)
+
+`GET /api/analytics/sprints/{sprintId}/burndown` returns the daily burndown timeline points for a sprint.
+
+#### Point DTO structure
+
+Each element in the returned list contains:
+- `date` (`LocalDate`, ISO-8601 string `yyyy-MM-dd`): calendar day of the sprint point.
+- `remainingWork` (`int`): estimated story points remaining at the end of that day (never negative, `>= 0`). Also exposed as `remaining`.
+- `unit` (`String`): estimation unit, always `STORY_POINTS`.
+
+#### Calculation rules
+
+- **Timeline range:** Points cover every day from `Sprint.startDate` to `Sprint.endDate` in chronological order. For an active sprint, the points run from `startDate` up to today (`LocalDate.now()`).
+- **Completion date:** An issue is considered completed when its status is `DONE` (`IssueStatusID.DONE`, id `5`), based on `Issue.lastModifiedDate`. The estimation of the issue is subtracted from remaining work starting from that day onwards.
+- **Sprint scope:** Scope is the current sum of estimations of issues in the sprint (and incomplete snapshot for stopped sprints). Tasks added during the sprint form part of the current scope; historical scope changes are not reconstructed.
+- **Non-negative remaining work:** Remaining work is bounded by `Math.max(0, totalScope - completedPointsUpToDay)` and never drops below 0 (`>= 0`).
+- **Unestimated sprint:** A sprint without estimations produces `0` remaining work for all days.
+
 ### Shared analytics conventions
 
 - Burndown and burnup use `Issue.lastModifiedDate` for completion of DONE issues and the current sum of
   sprint issue estimations as scope; historical scope changes are not reconstructed.
 - Sprint comparisons filter `startDate` inclusively between `from` and `to`; `from > to` is HTTP 400.
   Results are ordered by ascending `startDate`.
-- Planned endpoints are `/api/analytics/sprints/{id}/burndown`, `/api/analytics/sprints/{id}/burnup`,
+- Planned endpoints are `/api/analytics/sprints/{id}/burnup`,
   `/api/analytics/projects/{id}/sprints?from=&to=`, and `/api/analytics/projects/{id}/sprints/export.csv`;
-  only the report endpoint above is implemented here.
+  the report and burndown endpoints above are implemented.
 
 ## Authentication
 

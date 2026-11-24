@@ -198,11 +198,15 @@ snapshot cannot produce a reliable report and fails explicitly instead of report
 
 - Burndown and burnup use `Issue.lastModifiedDate` for completion of DONE issues and the current sum of
   sprint issue estimations as scope; historical scope changes are not reconstructed.
-- Sprint comparisons filter `startDate` inclusively between `from` and `to`; `from > to` is HTTP 400.
-  Results are ordered by ascending `startDate`.
+- Sprint comparison lists project sprints with `completedIssueCount`, `incompleteIssueCount`, `velocity`,
+  lifecycle `status` (`PLANNED`, `ACTIVE`, `DONE`), and `estimationUnit` `STORY_POINTS`.
+- Optional query parameters `from` and `to` (`yyyy-MM-dd`) filter by `Sprint.startDate` inclusively:
+  a sprint is included when its `startDate` falls within `[from, to]`. If either parameter is present,
+  sprints without `startDate` are excluded. When both are omitted, all project sprints are returned.
+  `from` after `to` returns HTTP 400. Results are ordered by ascending `startDate`, then `sprintId`.
+- `GET /api/analytics/projects/{projectId}/sprints` returns the filtered comparison as JSON.
 - Planned endpoints are `/api/analytics/sprints/{id}/burndown`, `/api/analytics/sprints/{id}/burnup`,
-  `/api/analytics/projects/{id}/sprints?from=&to=`, and `/api/analytics/projects/{id}/sprints/export.csv`;
-  only the report endpoint above is implemented here.
+  and `/api/analytics/projects/{id}/sprints/export.csv`.
 
 ## Authentication
 

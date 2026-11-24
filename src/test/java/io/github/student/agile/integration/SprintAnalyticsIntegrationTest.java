@@ -23,6 +23,9 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -60,6 +63,40 @@ class SprintAnalyticsIntegrationTest {
     void setUp() {
         when(userService.getCurrentLoggedUser()).thenReturn(createCurrentLoggedInUser());
         project = projectRepository.save(createProjectEntity());
+    }
+
+    @Test
+    void projectSprintComparisonAndCsvRespectFilters() throws Exception {
+        ZonedDateTime jan = ZonedDateTime.of(2024, 1, 15, 0, 0, 0, 0, ZoneOffset.UTC);
+        ZonedDateTime feb = ZonedDateTime.of(2024, 2, 15, 0, 0, 0, 0, ZoneOffset.UTC);
+        Sprint janSprint = sprintRepository.save(createSprintEntity(project, false));
+        janSprint.setStartDate(jan);
+        sprintRepository.save(janSprint);
+        Sprint febSprint = sprintRepository.save(createSprintEntity(project, false));
+        febSprint.setName("February sprint");
+        febSprint.setStartDate(feb);
+        sprintRepository.save(febSprint);
+        issue(janSprint, DONE.getStatusID(), 4);
+
+        mvc.perform(get("/api/analytics/projects/{id}/sprints", project.getId())
+                        .param("from", LocalDate.of(2024, 1, 1).toString())
+                        .param("to", LocalDate.of(2024, 1, 31).toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].sprintId").value(janSprint.getId()))
+                .andExpect(jsonPath("$[0].completedIssueCount").value(1))
+                .andExpect(jsonPath("$[0].velocity").value(4))
+                .andExpect(jsonPath("$[0].estimationUnit").value("STORY_POINTS"));
+
+        mvc.perform(get("/api/analytics/projects/{id}/sprints", 999999))
+                .andExpect(status().isNotFound());
+
+        mvc.perform(get("/api/analytics/projects/{id}/sprints", project.getId())
+                        .param("from", "2024-02-01")
+                        .param("to", "2024-01-01"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Parameter 'from' must not be after 'to'"));
+
     }
 
     @Test

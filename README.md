@@ -20,6 +20,7 @@
 - [Technology Stack](#technology-stack)
 - [Prerequisites](#prerequisites)
 - [Getting Started](#getting-started)
+- [Sprint Analytics](#sprint-analytics)
 - [Authentication](#authentication)
 - [API Documentation](#api-documentation)
 - [Useful URLs](#useful-urls)
@@ -153,6 +154,26 @@ docker compose -f compose.yaml down -v
 ```
 
 **Warning:** The `-v` option removes associated volumes and can permanently delete locally stored database data.
+
+## Sprint Analytics
+
+The analytics module (package `io.github.student.agile.analytics`) provides sprint reports and chart data.
+All endpoints use the same metric rules from `SprintMetricsCalculator`, so a value such as velocity
+is computed in one place only.
+
+### Metric rules (WF-2)
+
+| Rule | Definition |
+|---|---|
+| Completed issue | An issue whose status is `DONE` (`IssueStatusID.DONE`, id `5`). `TO_DO`, `IN_PROGRESS`, `CODE_REVIEW`, `IN_TESTS` and an issue without status are not completed. |
+| Estimation unit | `Issue.estimation`, an integer number of story points (`STORY_POINTS`). |
+| Issue without estimation | Counted in the number of issues (completed or not completed), adds 0 story points. A negative estimation is also treated as 0, so point sums are never negative. |
+| Sprint scope | Only issues assigned to the given sprint (`Issue.sprint`) are counted. Issues of other sprints or of the backlog are ignored. |
+| Velocity | Sum of estimations of completed issues assigned to the sprint. Not completed issues do not increase velocity. A sprint without issues or without completed issues has velocity `0`. |
+
+**Limitation:** the application does not keep a history of estimation changes. Reports use the current
+estimation of every issue, so changing an estimation after the sprint has ended also changes the
+reported velocity of that sprint.
 
 ## Authentication
 

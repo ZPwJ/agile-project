@@ -46,6 +46,15 @@ public class SprintMetricsCalculator {
     }
 
     /**
+     * Velocity of the sprint (WF-2): sum of estimations of DONE issues assigned to it.
+     * Not completed issues, issues of other sprints and issues without estimation add nothing.
+     * The current estimation of each issue is used, the application does not keep estimation history.
+     */
+    public int velocity(Sprint sprint, Collection<Issue> issues) {
+        return calculate(sprint, issues).velocity();
+    }
+
+    /**
      * Computes sprint metrics in a single pass over the issues.
      *
      * @param sprint sprint to compute metrics for

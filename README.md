@@ -205,8 +205,10 @@ snapshot cannot produce a reliable report and fails explicitly instead of report
   sprints without `startDate` are excluded. When both are omitted, all project sprints are returned.
   `from` after `to` returns HTTP 400. Results are ordered by ascending `startDate`, then `sprintId`.
 - `GET /api/analytics/projects/{projectId}/sprints` returns the filtered comparison as JSON.
-- Planned endpoints are `/api/analytics/sprints/{id}/burndown`, `/api/analytics/sprints/{id}/burnup`,
-  and `/api/analytics/projects/{id}/sprints/export.csv`.
+  `GET /api/analytics/projects/{projectId}/sprints/export.csv` uses the same filters and writes RFC 4180 CSV
+  (`Content-Disposition: attachment; filename="project-{id}-sprints.csv"`). An empty filter result still
+  contains the header row.
+- Planned endpoints are `/api/analytics/sprints/{id}/burndown` and `/api/analytics/sprints/{id}/burnup`.
 
 ## Authentication
 

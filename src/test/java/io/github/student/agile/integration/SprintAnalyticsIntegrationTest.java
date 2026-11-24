@@ -38,6 +38,8 @@ import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.I
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -97,6 +99,16 @@ class SprintAnalyticsIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("Parameter 'from' must not be after 'to'"));
 
+        mvc.perform(get("/api/analytics/projects/{id}/sprints/export.csv", project.getId())
+                        .param("from", LocalDate.of(2024, 1, 1).toString())
+                        .param("to", LocalDate.of(2024, 1, 31).toString()))
+                .andExpect(status().isOk())
+                .andExpect(header().string(
+                        "Content-Disposition",
+                        "attachment; filename=\"project-" + project.getId() + "-sprints.csv\""))
+                .andExpect(content().contentTypeCompatibleWith("text/csv"))
+                .andExpect(content().string(org.hamcrest.Matchers.startsWith(
+                        "projectId,sprintId,sprintName,startDate,endDate,completedIssueCount,incompleteIssueCount,velocity\r\n")));
     }
 
     @Test

@@ -88,6 +88,11 @@ public class SprintAnalyticsService {
         return result;
     }
 
+    @Transactional(readOnly = true)
+    public String exportSprintsCsv(Integer projectId, LocalDate from, LocalDate to) {
+        return SprintCsvWriter.write(compareSprints(projectId, from, to));
+    }
+
     private Map<Integer, List<Issue>> loadIssuesBySprint(List<Sprint> sprints) {
         if (sprints.isEmpty()) {
             return Map.of();

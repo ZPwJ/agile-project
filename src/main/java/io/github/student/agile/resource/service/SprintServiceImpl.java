@@ -1,5 +1,7 @@
 package io.github.student.agile.resource.service;
 
+import io.github.student.agile.analytics.SprintMetrics;
+import io.github.student.agile.analytics.SprintMetricsCalculator;
 import io.github.student.agile.exception.definition.NullIdentifierException;
 import io.github.student.agile.resource.domain.Issue;
 import io.github.student.agile.resource.domain.Project;
@@ -33,10 +35,8 @@ import static io.github.student.agile.exception.dictionary.ExceptionMessages.SPR
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.SPRINT_DOES_NOT_EXISTS;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.SPRINT_NAME_NOT_UNIQUE;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.SPRINT_START_DATE_IN_THE_FUTURE;
-import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.DONE;
 import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.TO_DO;
 import static io.github.student.agile.utils.DateUtils.reduceTimeFromZonedDateTime;
-import static io.github.student.agile.utils.collection.CollectionsUtils.splitSetIntoTwoSubSets;
 import static java.lang.Boolean.FALSE;
 import static java.lang.Boolean.TRUE;
 import static java.util.Objects.isNull;
@@ -54,6 +54,7 @@ public class SprintServiceImpl implements SprintService {
     private final ProjectRepository projectRepository;
     private final IssueStatusRepository issueStatusRepository;
     private final SprintDTOMapper sprintDTOMapper;
+    private final SprintMetricsCalculator metricsCalculator;
 
     @Override
     public SprintDTO getActiveSprint(Integer projectID) {
@@ -198,6 +199,10 @@ public class SprintServiceImpl implements SprintService {
         Sprint updated = sprintRepository.findById(ofNullable(sprintID).orElseThrow(NullIdentifierException::new))
                 .orElseThrow(() -> new IllegalArgumentException(SPRINT_DOES_NOT_EXISTS));
 
+        if (Boolean.TRUE.equals(updated.getIsDone())) {
+            throw new IllegalStateException("A completed sprint cannot be started again");
+        }
+
         if(sprintRepository.findByActiveAndProject(TRUE, updated.getProject()).isPresent()) {
             throw new RuntimeException(ACTIVE_SPRINT_EXISTS);
         }
@@ -215,6 +220,9 @@ public class SprintServiceImpl implements SprintService {
             updated.setStartDate(ZonedDateTime.now());
         }
 
+        SprintMetrics metrics = metricsCalculator.calculate(updated, updated.getSprintIssues());
+        updated.setInitialIssueCount(metrics.totalIssues());
+        updated.setInitialEstimation(metrics.totalEstimation());
         updated.setActive(TRUE);
         sprintRepository.save(updated);
     }
@@ -228,28 +236,24 @@ public class SprintServiceImpl implements SprintService {
         Sprint updated = sprintRepository.findByActiveAndProject(TRUE, project)
                 .orElseThrow(() -> new RuntimeException(NO_ACTIVE_SPRINT_IN_PROJECT));
 
-        Pair<Set<Issue>, Set<Issue>> dividedSet = splitSetIntoTwoSubSets(updated.getSprintIssues(), issue -> issue.getIssueStatus().getId().equals(DONE.getStatusID()));
-        Set<Issue> doneIssues = dividedSet.getKey();
-        Set<Issue> uncompletedIssues = dividedSet.getValue();
+        SprintMetrics metrics = metricsCalculator.calculate(updated, updated.getSprintIssues());
+        updated.setIncompleteIssueCount(metrics.incompleteIssues());
+        updated.setIncompleteEstimation(metrics.incompleteEstimation());
 
-        doneIssues.forEach(issue -> {
-            issue.setSprint(null);
-            issueRepository.save(issue);
-        });
-
+        Set<Issue> uncompletedIssues = updated.getSprintIssues().stream()
+                .filter(issue -> !metricsCalculator.isCompleted(issue))
+                .collect(Collectors.toSet());
         uncompletedIssues.forEach(issue -> {
             issue.setSprint(null);
             issue.setIssueStatus(issueStatusRepository.findById(TO_DO.getStatusID()).orElseThrow());
             issueRepository.save(issue);
         });
 
-        updated.setSprintIssues(new HashSet<>());
-        sprintRepository.save(updated);
-
+        updated.getSprintIssues().removeAll(uncompletedIssues);
         updated.setActive(FALSE);
         updated.setIsDone(TRUE);
+        updated.setEndDate(ZonedDateTime.now());
         sprintRepository.save(updated);
-        sprintRepository.deleteById(updated.getId());
     }
 
     private Pair<Boolean, String> validateSprintDatesForStart(Sprint sprint) {

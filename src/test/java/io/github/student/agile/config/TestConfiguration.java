@@ -9,7 +9,7 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 
 @SpringBootConfiguration
 @EnableJpaRepositories({"io.github.student.agile.resource.repository"})
-@ComponentScan(value = {"io.github.student.agile.resource"})
+@ComponentScan(value = {"io.github.student.agile.resource", "io.github.student.agile.analytics"})
 @AutoConfigureDataJpa
 @EntityScan({"io.github.student.agile.resource.domain"})
 @EnableJpaAuditing

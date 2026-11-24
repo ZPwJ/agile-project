@@ -15,6 +15,7 @@ import io.github.student.agile.resource.repository.ProjectRepository;
 import io.github.student.agile.resource.repository.SprintRepository;
 import io.github.student.agile.resource.service.SprintService;
 import io.github.student.agile.resource.service.UserService;
+import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.junit.jupiter.api.Assertions;
@@ -29,6 +30,7 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -81,6 +83,9 @@ public class SprintServiceTest {
 
     @Autowired
     private IssueStatusRepository issueStatusRepository;
+
+    @Autowired
+    private EntityManager entityManager;
 
     @MockBean
     private UserService userService;
@@ -266,15 +271,24 @@ public class SprintServiceTest {
         //given
         Sprint sprint = sprintRepository.save(createSprintEntity(defaultScrumProject, Boolean.FALSE));
         Issue issue = issueRepository.save(createIssueEntityWithSprint(sprint));
+        issue.setEstimation(5);
+        Issue unestimatedIssue = issueRepository.save(createIssueEntityWithSprint(sprint));
         sprint.setSprintIssues(new HashSet<>(List.of(issue)));
+        sprint.getSprintIssues().add(unestimatedIssue);
         sprintRepository.save(sprint);
 
         //when
         sprintService.startSprint(sprint.getId());
         boolean existsActiveSprint = sprintRepository.findByActiveAndProject(Boolean.TRUE, defaultScrumProject).isPresent() ? sprintRepository.findByActiveAndProject(Boolean.TRUE, defaultScrumProject).get().getActive() : false;
+        Integer sprintId = sprint.getId();
+        entityManager.flush();
+        entityManager.clear();
+        Sprint persistedSprint = sprintRepository.findById(sprintId).orElseThrow();
 
         //then
         assertTrue(existsActiveSprint);
+        assertEquals(2, persistedSprint.getInitialIssueCount());
+        assertEquals(5, persistedSprint.getInitialEstimation());
     }
 
     @Test
@@ -344,17 +358,35 @@ public class SprintServiceTest {
         Sprint activeSprint = preparedSprintToStop.sprint();
         Issue inProgressIssue = preparedSprintToStop.otherIssue();
         Issue doneIssue = preparedSprintToStop.doneIssue();
+        inProgressIssue.setEstimation(8);
+        doneIssue.setEstimation(3);
+        entityManager.flush();
+        Date completionDate = doneIssue.getLastModifiedDate();
+        assertNotNull(completionDate);
+        Integer sprintId = activeSprint.getId();
+        Integer doneId = doneIssue.getId();
+        Integer incompleteId = inProgressIssue.getId();
 
         //when
         sprintService.stopSprint(defaultScrumProject.getId());
-        Sprint sprintAfterStopOperation = sprintRepository.findById(activeSprint.getId()).orElse(null);
+        entityManager.flush();
+        entityManager.clear();
+        Sprint sprintAfterStopOperation = sprintRepository.findById(sprintId).orElseThrow();
+        doneIssue = issueRepository.findById(doneId).orElseThrow();
+        inProgressIssue = issueRepository.findById(incompleteId).orElseThrow();
 
         //then
         assertEquals(TO_DO.getStatusID(), inProgressIssue.getIssueStatus().getId());
         assertEquals(DONE.getStatusID(), doneIssue.getIssueStatus().getId());
         assertNull(inProgressIssue.getSprint());
-        assertNull(doneIssue.getSprint());
-        assertNull(sprintAfterStopOperation);
+        assertEquals(sprintId, doneIssue.getSprint().getId());
+        assertEquals(completionDate, doneIssue.getLastModifiedDate());
+        assertFalse(sprintAfterStopOperation.getActive());
+        assertTrue(sprintAfterStopOperation.getIsDone());
+        assertNotNull(sprintAfterStopOperation.getEndDate());
+        assertEquals(1, sprintAfterStopOperation.getIncompleteIssueCount());
+        assertEquals(8, sprintAfterStopOperation.getIncompleteEstimation());
+        assertEquals(1, sprintAfterStopOperation.getSprintIssues().size());
     }
 
     @Test
@@ -368,6 +400,14 @@ public class SprintServiceTest {
 
         //then
         assertEquals(PROJECT_DOES_NOT_EXISTS, exception.getMessage());
+    }
+
+    @Test
+    public void startSprint_rejectsCompletedSprint() {
+        SprintWithIssues prepared = prepareSprintWithIssuesToStop();
+        sprintService.stopSprint(defaultScrumProject.getId());
+
+        assertThrows(IllegalStateException.class, () -> sprintService.startSprint(prepared.sprint().getId()));
     }
 
     @Test

@@ -21,6 +21,13 @@ public record SprintMetrics(
 
     public static final SprintMetrics EMPTY = new SprintMetrics(0, 0, 0, 0, 0);
 
+    /**
+     * Sprint velocity (WF-2): sum of estimations of DONE issues assigned to the sprint.
+     */
+    public int velocity() {
+        return completedEstimation;
+    }
+
     /** Sum of estimations of all sprint issues, i.e. the current sprint scope. */
     public int totalEstimation() {
         return completedEstimation + incompleteEstimation;

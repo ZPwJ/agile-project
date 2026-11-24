@@ -175,6 +175,35 @@ is computed in one place only.
 estimation of every issue, so changing an estimation after the sprint has ended also changes the
 reported velocity of that sprint.
 
+### Sprint lifecycle and report
+
+Starting a sprint records the initial issue count and estimated story points. Stopping it records
+`endDate`, the count and estimated points of incomplete issues, sets `active=false` and `isDone=true`,
+and keeps the sprint and its DONE issues. Incomplete issues return to the backlog with status TO_DO.
+DONE issues are not modified, preserving their `lastModifiedDate` for chart completion dates.
+
+`GET /api/analytics/sprints/{sprintId}/report` returns `sprintId`, `sprintName`, `projectId`,
+`startDate`, `endDate`, `totalIssues`, `completedIssues`, `incompleteIssues`, `velocity`, and
+`incompleteEstimation`. Before completion these metrics use the currently assigned issues. After
+completion, incomplete counts and points include the snapshot taken at stopping; completed counts and
+velocity still use currently assigned issues. Issues added later to a completed sprint are also counted.
+Missing sprints return 404 and invalid IDs return 400, with a JSON `status` and `message`.
+
+The `sprint` table gains nullable columns `end_date`, `initial_issue_count`, `initial_estimation`,
+`incomplete_issue_count`, and `incomplete_estimation`; the application uses Hibernate `ddl-auto: update`
+to add them. Existing data cannot supply historical snapshots: a completed sprint without an incomplete
+snapshot cannot produce a reliable report and fails explicitly instead of reporting invented zeros.
+
+### Shared analytics conventions
+
+- Burndown and burnup use `Issue.lastModifiedDate` for completion of DONE issues and the current sum of
+  sprint issue estimations as scope; historical scope changes are not reconstructed.
+- Sprint comparisons filter `startDate` inclusively between `from` and `to`; `from > to` is HTTP 400.
+  Results are ordered by ascending `startDate`.
+- Planned endpoints are `/api/analytics/sprints/{id}/burndown`, `/api/analytics/sprints/{id}/burnup`,
+  `/api/analytics/projects/{id}/sprints?from=&to=`, and `/api/analytics/projects/{id}/sprints/export.csv`;
+  only the report endpoint above is implemented here.
+
 ## Authentication
 
 Agile Project uses a separate authentication and authorization server to issue access tokens for protected API requests.

@@ -1,0 +1,2 @@
+scripts/git/check-branch.sh
+scripts/git/check-secrets.sh

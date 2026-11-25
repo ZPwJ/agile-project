@@ -1,0 +1,17 @@
+. scripts/git/rules.sh
+
+zero="0000000000000000000000000000000000000000"
+message_file="$(mktemp)"
+trap 'rm -f "$message_file"' EXIT
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ "$local_sha" = "$zero" ] && continue
+  branch="${remote_ref#refs/heads/}"
+  scripts/git/check-branch.sh "$branch" || exit 1
+  for commit in $(git rev-list "$local_sha" --not --remotes=origin); do
+    git log -1 --format=%B "$commit" > "$message_file"
+    scripts/git/check-commit-msg.sh "$message_file" "$branch" || exit 1
+  done
+done
+
+make verify

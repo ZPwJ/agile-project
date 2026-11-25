@@ -174,8 +174,6 @@ hs_err_pid*
 replay_pid*
 
 ### Maven ###
-mvnw
-mvnw.cmd
 target/
 pom.xml.tag
 pom.xml.releaseBackup
@@ -216,3 +214,5 @@ buildNumber.properties
 # End of https://www.toptal.com/developers/gitignore/api/visualstudiocode,intellij+iml,intellij+all,java,maven
 
 .env
+### Node (husky) ###
+node_modules/

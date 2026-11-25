@@ -1,0 +1,1 @@
+scripts/git/check-commit-msg.sh "$1"

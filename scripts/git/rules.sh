@@ -9,7 +9,7 @@ BRANCH_REGEX="^($TYPES)/($NAMES)/[0-9]+/[a-z0-9]+(-[a-z0-9]+)*$"
 COMMIT_REGEX="^($TYPES)\(#[0-9]+\): [a-z0-9].{0,70}[^.]$"
 PR_TITLE_REGEX="^\[($NAMES)\] ($TYPES)\(#[0-9]+\): .+[^.]$"
 AI_ATTRIBUTION_REGEX="co-authored-by:.*(claude|anthropic|codex|openai|chatgpt|gpt|copilot|cursor|gemini|noreply@anthropic)|generated (with|by) .*(claude|codex|ai|copilot|chatgpt)|🤖"
-SECRET_REGEX="-----BEGIN [A-Z ]*PRIVATE KEY-----|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{40,}|sk-[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}"
+SECRET_REGEX="-----BEGIN [A-Z ]*PRIVATE KEY-----|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{40,}|sk-[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"
 
 fail() {
   printf '\033[31m✖ %s\033[0m\n' "$1" >&2

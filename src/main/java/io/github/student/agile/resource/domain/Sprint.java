@@ -37,7 +37,14 @@ public class Sprint extends Auditable implements Serializable {
     @NotNull
     private String name;
 
+    /** Planned sprint start date (set on create/update). */
     private ZonedDateTime startDate;
+
+    /** Actual moment the sprint was started; set when the sprint starts. */
+    private ZonedDateTime startedAt;
+
+    /** Actual moment the sprint was finished; set when the sprint is stopped. */
+    private ZonedDateTime endDate;
 
     @ManyToOne
     @JoinColumn(name = "ProjectID", nullable = false)

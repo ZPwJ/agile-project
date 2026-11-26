@@ -13,13 +13,13 @@ public class SprintRaportDTOMapper {
    public SprintRaportDTO map(
            Sprint sprintRaport,
            Integer countIssues,
-           Integer countIssuesDone
+           Integer countIssuesDone,
+           Integer countIssuesNotDone,
+           Integer sumVelocityIssuesDone,
+           Integer sumVelocityIssuesNotDone
    ) {
 
-//       private Integer countIssuesDone;
-//       private Integer countIssuesToDo;
-//       private Integer sumVelocityDone;
-//       private Integer sumVelocityToDo;
+//       private Integer sumVelocityNotDone;
 
        return SprintRaportDTO.builder()
                .sprintId(sprintRaport.getId())
@@ -27,6 +27,10 @@ public class SprintRaportDTOMapper {
                .startTime(sprintRaport.getStartDate())
                .projectId(sprintRaport.getProject().getId())
                .countIssues(countIssues)
+               .countIssuesDone(countIssuesDone)
+               .countIssuesNotDone(countIssuesNotDone)
+               .sumVelocityDone(sumVelocityIssuesDone)
+               .sumVelocityNotDone(sumVelocityIssuesNotDone)
                .build();
    }
 

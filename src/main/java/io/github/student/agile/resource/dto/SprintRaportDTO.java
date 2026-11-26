@@ -20,7 +20,7 @@ public class SprintRaportDTO {
     private ZonedDateTime startTime;
     private Integer countIssues;
     private Integer countIssuesDone;
-    private Integer countIssuesToDo;
+    private Integer countIssuesNotDone;
     private Integer sumVelocityDone;
-    private Integer sumVelocityToDo;
+    private Integer sumVelocityNotDone;
 }

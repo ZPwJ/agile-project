@@ -23,23 +23,41 @@ public class RaportSprintService {
     private final IssueRepository issueRepository;
     private final ProjectRepository projectRepository;
     private final SprintRaportDTOMapper sprintraportDTOMapper;
-    private final IssueStatusRepository issueStatusRepository;
 
     private Integer countIssuesBySprintId(Integer sprintId){
         return issueRepository.countIssuesBySprint_Id(sprintId);
     }
 
     private Integer countIssuesDoneBySprintId(Integer sprintId){
-        return issueStatusRepository.countByIdAndStatusName_Done(sprintId);
+        return issueRepository.countIssuesDoneBySprint_Id(sprintId);
+    }
+
+    private Integer countIssuesNotDoneBySprintId(Integer sprintId){
+        return countIssuesBySprintId(sprintId) - countIssuesDoneBySprintId(sprintId);
+    }
+
+    private Integer sumVelocityIssuesDoneBySprint_Id(Integer sprintId){
+        return issueRepository.sumVelocityIssuesDoneBySprint_Id(sprintId);
+    }
+
+    private Integer sumVelocityIssuesNotDoneBySprint_Id(Integer sprintId){
+        return issueRepository.sumVelocityIssuesNotDoneBySprint_Id(sprintId);
     }
 
     public SprintRaportDTO getRaport(Integer sprintId){
-        //zamienic mapper
         Sprint sprint = sprintRepository.findSprintById(sprintId)
                 .orElseThrow(() -> new RuntimeException("Sprint not found"));
 
         if(sprintRepository.findSprintById(sprintId) != null){
-            return sprintraportDTOMapper.map(sprintRepository.findSprintById(sprintId).get(), countIssuesBySprintId(sprintId));
+            return sprintraportDTOMapper.map(
+                    sprintRepository.findSprintById(sprintId).get(),
+                    countIssuesBySprintId(sprintId),
+                    countIssuesDoneBySprintId(sprintId),
+                    countIssuesNotDoneBySprintId(sprintId),
+                    sumVelocityIssuesDoneBySprint_Id(sprintId),
+                    sumVelocityIssuesNotDoneBySprint_Id(sprintId)
+            );
+
         }
         return null;
 

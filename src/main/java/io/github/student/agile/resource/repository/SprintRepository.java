@@ -14,4 +14,7 @@ public interface SprintRepository extends JpaRepository<Sprint, Integer> {
     Optional<List<Sprint>> findAllByActiveAndIsDoneAndProject(Boolean active, Boolean isDone ,Project project);
     Optional<Sprint> findByActiveAndProject(Boolean active, Project project);
     boolean existsByNameAndProject(String name, Project project);
+
+
+    Optional<Sprint> findSprintById(Integer id);
 }

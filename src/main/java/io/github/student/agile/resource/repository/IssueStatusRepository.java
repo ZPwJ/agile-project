@@ -6,4 +6,7 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface IssueStatusRepository extends JpaRepository<IssueStatus, Integer> {
+//
+//    Integer countByIdAndStatusName_Done(Integer id);
+//    Integer countByIdAndStatusName_NotDone(Integer id);
 }

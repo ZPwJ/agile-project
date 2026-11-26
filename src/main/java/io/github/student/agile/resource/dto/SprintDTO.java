@@ -16,7 +16,8 @@ public class SprintDTO {
     private Integer id;
     private String name;
     private ZonedDateTime startTime;
+    private Integer projectID;
     private Boolean active;
     private String sprintGoal;
-    private Integer projectID;
+
 }

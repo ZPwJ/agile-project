@@ -4,6 +4,7 @@ import io.github.student.agile.resource.dto.IssueDTO;
 import io.github.student.agile.resource.dto.IssueGeneralDTO;
 import io.github.student.agile.resource.dto.request.IssueMRO;
 import io.github.student.agile.resource.service.IssueService;
+import io.swagger.v3.oas.annotations.Operation;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -32,11 +33,14 @@ public class IssueRestController {
         return ResponseEntity.ok(issueService.getIssuesGeneral(projectID));
     }
 
+    @Operation(summary = "Gets all issues in the backlog with the status TO_DO and no assigned sprint.",
+            description = "Does not return the whole backlog. For completed issues, use /product-backlog-history. For issues included in a sprint backlog, use /sprint/{id}.")
     @GetMapping("/product-backlog")
     public ResponseEntity<List<IssueGeneralDTO>> getProductBacklogByProjectID(@RequestParam Integer projectID) {
         return ResponseEntity.ok(issueService.getProductBacklog(projectID));
     }
 
+    @Operation(summary = "Gets all issues in the backlog with the status DONE.")
     @GetMapping("/product-backlog-history")
     public ResponseEntity<List<IssueGeneralDTO>> getProductBacklogHistoryByProjectID(@RequestParam Integer projectID) {
         return ResponseEntity.ok(issueService.getBacklogHistory(projectID));
@@ -72,16 +76,19 @@ public class IssueRestController {
         issueService.deleteIssue(id);
     }
 
+    @Operation(summary = "Assigns the issue to the current user")
     @PostMapping("/{id}/assign")
     public void assignCurrentUserToIssue(@PathVariable Integer id) {
         issueService.assignCurrentUserToIssue(id);
     }
 
+    @Operation(summary = "Removes the current user assignment",description = "The user doesn't have to be the current one.")
     @PutMapping("/{id}/delete-assignment")
     public void deleteUserToIssueAssignment(@PathVariable Integer id) {
         issueService.deleteUserToIssueAssignment(id);
     }
 
+    @Operation(summary = "Changes the status",description = "Allowed: TO_DO->IN_PROGRESS, IN_PROGRESS->CODE_REVIEW, CODE_REVIEW->IN_TESTS, IN_TESTS->DONE, CODE_REVIEW->IN_PROGRESS, IN_TESTS->IN_PROGRESS")
     @PatchMapping("/{id}/status/{statusID}")
     public void changeIssueStatus(@PathVariable Integer id, @PathVariable Integer statusID) {
         issueService.changeIssueStatus(id, statusID);

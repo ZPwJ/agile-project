@@ -21,10 +21,6 @@
 - [Prerequisites](#prerequisites)
 - [Getting Started](#getting-started)
 - [Authentication](#authentication)
-- [API Documentation](#api-documentation)
-- [Useful URLs](#useful-urls)
-- [Project Structure](#project-structure)
-- [Security Notes](#security-notes)
 
 ## Overview
 
@@ -127,7 +123,7 @@ To run the stack in the background:
 docker compose -f compose.yaml up --build -d
 ```
 ### 3. Execute src/main/resources/data-prod.sql on app-db
-Otherwise endpoints that require issue types, statuses and priorities (ex. adding new issues) won't work.
+Otherwise, endpoints that require issue types, statuses and priorities (ex. adding new issues) won't work.
 
 ### 4. Verify the services
 

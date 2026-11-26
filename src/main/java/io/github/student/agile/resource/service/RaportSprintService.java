@@ -12,7 +12,9 @@ import io.github.student.agile.resource.repository.ProjectRepository;
 import io.github.student.agile.resource.repository.SprintRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 @Service
 @Transactional
@@ -46,9 +48,9 @@ public class RaportSprintService {
 
     public SprintRaportDTO getRaport(Integer sprintId){
         Sprint sprint = sprintRepository.findSprintById(sprintId)
-                .orElseThrow(() -> new RuntimeException("Sprint not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Sprint not found"));
 
-        if(sprintRepository.findSprintById(sprintId) != null){
+        if(sprint != null){
             return sprintraportDTOMapper.map(
                     sprintRepository.findSprintById(sprintId).get(),
                     countIssuesBySprintId(sprintId),

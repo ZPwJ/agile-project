@@ -28,7 +28,7 @@ public interface IssueRepository extends JpaRepository<Issue, Integer> {
     Integer countIssuesDoneBySprint_Id(Integer sprintId);
 
     @Query("""
-        SELECT SUM(i.estimation)
+        SELECT COALESCE( SUM(i.estimation), 0 )
         FROM Issue i
         JOIN i.issueStatus s
         WHERE i.sprint.id = :sprintId
@@ -38,7 +38,7 @@ public interface IssueRepository extends JpaRepository<Issue, Integer> {
 
 
     @Query("""
-        SELECT SUM(i.estimation)
+        SELECT COALESCE( SUM(i.estimation), 0 )
         FROM Issue i
         JOIN i.issueStatus s
         WHERE i.sprint.id = :sprintId

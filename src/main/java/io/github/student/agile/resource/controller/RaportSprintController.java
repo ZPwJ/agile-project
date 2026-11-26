@@ -21,7 +21,9 @@ public class RaportSprintController {
 
     @GetMapping("/sprint/raport/{sprintId}")
     public ResponseEntity<SprintRaportDTO> getSprintRaport(@PathVariable Integer sprintId) {
-        return ResponseEntity.ok(raportSprintService.getRaport(sprintId));
+        SprintRaportDTO raportSprintDTO = raportSprintService.getRaport(sprintId);
+
+        return ResponseEntity.ok(raportSprintDTO);
     }
 
 }

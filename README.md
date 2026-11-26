@@ -126,21 +126,23 @@ To run the stack in the background:
 ```bash
 docker compose -f compose.yaml up --build -d
 ```
+### 3. Execute src/main/resources/data-prod.sql on app-db
+Otherwise endpoints that require issue types, statuses and priorities (ex. adding new issues) won't work.
 
-### 3. Verify the services
+### 4. Verify the services
 
 Once the services have started, the main endpoints are:
 
-| Service | URL |
-|---|---|
-| Resource server | [http://localhost:8081](http://localhost:8081) |
-| Authentication server | [http://localhost:8080](http://localhost:8080) |
-| OpenAPI UI | [http://localhost:8081/docs.html](http://localhost:8081/docs.html) |
-| OpenAPI specification | [http://localhost:8081/api-docs](http://localhost:8081/api-docs) |
+| Service | URL                                                                  |
+|---|----------------------------------------------------------------------|
+| Resource server | [http://localhost:8081](http://localhost:8081)                       |
+| Authentication server | [http://localhost:8080](http://localhost:8080)                       |
+| OpenAPI UI | [http://localhost:8081/swagger-ui](http://localhost:8081/swagger-ui) |
+| OpenAPI specification | [http://localhost:8081/api-docs](http://localhost:8081/api-docs)     |
 
 The API may require authentication for protected endpoints.
 
-### 4. Stop the application
+### 5. Stop the application
 
 ```bash
 docker compose -f compose.yaml down

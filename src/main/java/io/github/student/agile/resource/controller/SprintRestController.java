@@ -2,6 +2,7 @@ package io.github.student.agile.resource.controller;
 
 import io.github.student.agile.resource.dto.SprintDTO;
 import io.github.student.agile.resource.service.SprintService;
+import io.swagger.v3.oas.annotations.Operation;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -29,6 +30,7 @@ public class SprintRestController {
         return ResponseEntity.ok(sprintService.getActiveSprint(projectID));
     }
 
+    @Operation(summary = "Gets sprints that haven't been activated yet (skips finished sprints)")
     @GetMapping("/non-activated/{projectID}")
     public ResponseEntity<List<SprintDTO>> getAllSprints(@PathVariable Integer projectID) {
         return ResponseEntity.ok(sprintService.getAllNonActivatedSprints(projectID));
@@ -66,6 +68,7 @@ public class SprintRestController {
         sprintService.startSprint(id);
     }
 
+    @Operation(summary = "Deletes the project's active sprint and sets the state of all unfinished issues to TO_DO.")
     @PatchMapping("/project/{id}/stop")
     public void stopSprint(@PathVariable Integer id) {
         sprintService.stopSprint(id);

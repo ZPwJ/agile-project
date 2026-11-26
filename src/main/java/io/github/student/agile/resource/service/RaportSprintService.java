@@ -23,7 +23,6 @@ public class RaportSprintService {
 
     private final SprintRepository sprintRepository;
     private final IssueRepository issueRepository;
-    private final ProjectRepository projectRepository;
     private final SprintRaportDTOMapper sprintraportDTOMapper;
 
     private Integer countIssuesBySprintId(Integer sprintId){

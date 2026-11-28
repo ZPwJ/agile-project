@@ -15,6 +15,7 @@ import io.github.student.agile.resource.repository.ProjectRepository;
 import io.github.student.agile.resource.repository.SprintRepository;
 import io.github.student.agile.resource.service.SprintService;
 import io.github.student.agile.resource.service.UserService;
+import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.junit.jupiter.api.Assertions;
@@ -26,7 +27,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 
+import java.time.Instant;
 import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -43,6 +46,8 @@ import static io.github.student.agile.builder.SprintBuilder.createSprintEntity;
 import static io.github.student.agile.builder.UserBuilder.createCurrentLoggedInUser;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.ACTIVE_SPRINT_EXISTS;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.EMPTY_SPRINT;
+import static io.github.student.agile.exception.dictionary.ExceptionMessages.FINISHED_SPRINT_CANNOT_BE_EXTENDED;
+import static io.github.student.agile.exception.dictionary.ExceptionMessages.FINISHED_SPRINT_CANNOT_BE_STARTED;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.ISSUE_ALREADY_HAS_SPRINT;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.ISSUE_DOES_NOT_EXISTS;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.NO_ACTIVE_SPRINT_IN_PROJECT;
@@ -81,6 +86,9 @@ public class SprintServiceTest {
 
     @Autowired
     private IssueStatusRepository issueStatusRepository;
+
+    @Autowired
+    private EntityManager entityManager;
 
     @MockBean
     private UserService userService;
@@ -174,6 +182,9 @@ public class SprintServiceTest {
         assertEquals(sprintDTO.getProjectID(), createdSprint.getProjectID());
         assertEquals(Boolean.FALSE, createdSprint.getActive());
         assertEquals(sprintDTO.getSprintGoal(), createdSprint.getSprintGoal());
+        Sprint savedSprint = sprintRepository.findById(createdSprint.getId()).orElseThrow();
+        assertNull(savedSprint.getStartedAt());
+        assertNull(savedSprint.getEndedAt());
     }
 
     @Test
@@ -278,6 +289,79 @@ public class SprintServiceTest {
     }
 
     @Test
+    public void startSprint_setsStartedAtAndKeepsPlannedStartDate() {
+
+        //given
+        ZonedDateTime plannedStartDate = ZonedDateTime.now().minusDays(3);
+        Sprint sprint = saveSprintWithIssue();
+        sprint.setStartDate(plannedStartDate);
+        sprintRepository.save(sprint);
+        Instant before = now();
+
+        //when
+        sprintService.startSprint(sprint.getId());
+
+        //then
+        assertBetween(before, sprint.getStartedAt(), now());
+        assertEquals(plannedStartDate, sprint.getStartDate());
+        assertNull(sprint.getEndedAt());
+    }
+
+    @Test
+    public void startSprint_rejectedStartLeavesStartedAtEmpty() {
+
+        //given
+        Sprint sprint = sprintRepository.save(createSprintEntity(defaultScrumProject, Boolean.FALSE));
+
+        //when
+        assertThrows(RuntimeException.class, () -> sprintService.startSprint(sprint.getId()));
+
+        //then
+        assertNull(sprint.getStartedAt());
+        assertFalse(sprint.getActive());
+    }
+
+    @Test
+    public void startSprint_throwsFinishedSprintCannotBeStartedExceptionTest() {
+
+        //given
+        Sprint sprint = saveSprintWithIssue();
+        Instant startedAt = now().minus(14, ChronoUnit.DAYS);
+        Instant endedAt = now().minus(1, ChronoUnit.DAYS);
+        sprint.setIsDone(Boolean.TRUE);
+        sprint.setStartedAt(startedAt);
+        sprint.setEndedAt(endedAt);
+        sprintRepository.save(sprint);
+
+        //when
+        Exception exception = assertThrows(RuntimeException.class, () -> sprintService.startSprint(sprint.getId()));
+
+        //then
+        assertEquals(FINISHED_SPRINT_CANNOT_BE_STARTED, exception.getMessage());
+        assertFalse(sprint.getActive());
+        assertEquals(startedAt, sprint.getStartedAt());
+        assertEquals(endedAt, sprint.getEndedAt());
+    }
+
+    @Test
+    public void addIssueToSprint_throwsFinishedSprintCannotBeExtendedExceptionTest() {
+
+        //given
+        Sprint sprint = createSprintEntity(defaultScrumProject, Boolean.FALSE);
+        sprint.setIsDone(Boolean.TRUE);
+        sprintRepository.save(sprint);
+        Issue issue = issueRepository.save(createIssueEntity());
+
+        //when
+        Exception exception = assertThrows(RuntimeException.class, () -> sprintService.addIssueToSprint(issue.getId(), sprint.getId()));
+
+        //then
+        assertEquals(FINISHED_SPRINT_CANNOT_BE_EXTENDED, exception.getMessage());
+        assertNull(issue.getSprint());
+        assertTrue(sprint.getSprintIssues().isEmpty());
+    }
+
+    @Test
     public void startSprint_throwsActiveSprintAlreadyExistsExceptionTest() {
 
         //given
@@ -342,19 +426,76 @@ public class SprintServiceTest {
         //given
         SprintWithIssues preparedSprintToStop = prepareSprintWithIssuesToStop();
         Sprint activeSprint = preparedSprintToStop.sprint();
-        Issue inProgressIssue = preparedSprintToStop.otherIssue();
-        Issue doneIssue = preparedSprintToStop.doneIssue();
+        Instant startedAt = now().minus(14, ChronoUnit.DAYS);
+        activeSprint.setStartedAt(startedAt);
+        sprintRepository.save(activeSprint);
+        Instant before = now();
 
         //when
         sprintService.stopSprint(defaultScrumProject.getId());
-        Sprint sprintAfterStopOperation = sprintRepository.findById(activeSprint.getId()).orElse(null);
+        Instant after = now();
+        entityManager.flush();
+        entityManager.clear();
 
         //then
+        Sprint sprintAfterStopOperation = sprintRepository.findById(activeSprint.getId()).orElseThrow();
+        assertTrue(sprintAfterStopOperation.getIsDone());
+        assertFalse(sprintAfterStopOperation.getActive());
+        assertEquals(startedAt, sprintAfterStopOperation.getStartedAt());
+        assertBetween(before, sprintAfterStopOperation.getEndedAt(), after);
+        assertTrue(issueRepository.findAllBySprint(sprintAfterStopOperation).isEmpty());
+
+        Issue inProgressIssue = issueRepository.findById(preparedSprintToStop.otherIssue().getId()).orElseThrow();
+        Issue doneIssue = issueRepository.findById(preparedSprintToStop.doneIssue().getId()).orElseThrow();
         assertEquals(TO_DO.getStatusID(), inProgressIssue.getIssueStatus().getId());
         assertEquals(DONE.getStatusID(), doneIssue.getIssueStatus().getId());
         assertNull(inProgressIssue.getSprint());
         assertNull(doneIssue.getSprint());
-        assertNull(sprintAfterStopOperation);
+    }
+
+    @Test
+    public void stopSprint_finishedSprintIsNotListedAsNonActivated() {
+
+        //given
+        Sprint activeSprint = prepareSprintWithIssuesToStop().sprint();
+        Sprint plannedSprint = sprintRepository.save(createSprintEntity(defaultScrumProject, Boolean.FALSE));
+
+        //when
+        sprintService.stopSprint(defaultScrumProject.getId());
+        List<SprintDTO> nonActivatedSprints = sprintService.getAllNonActivatedSprints(defaultScrumProject.getId());
+
+        //then
+        assertTrue(sprintRepository.existsById(activeSprint.getId()));
+        assertEquals(List.of(plannedSprint.getId()), nonActivatedSprints.stream().map(SprintDTO::getId).toList());
+    }
+
+    @Test
+    public void stopSprint_allowsToStartNextSprint() {
+
+        //given
+        prepareSprintWithIssuesToStop();
+        Sprint nextSprint = saveSprintWithIssue();
+
+        //when
+        sprintService.stopSprint(defaultScrumProject.getId());
+        sprintService.startSprint(nextSprint.getId());
+
+        //then
+        assertTrue(nextSprint.getActive());
+    }
+
+    @Test
+    public void stopSprint_sprintWithoutStartedAtGetsOnlyEndedAt() {
+
+        //given
+        Sprint activeSprint = prepareSprintWithIssuesToStop().sprint();
+
+        //when
+        sprintService.stopSprint(defaultScrumProject.getId());
+
+        //then
+        assertNull(activeSprint.getStartedAt());
+        assertNotNull(activeSprint.getEndedAt());
     }
 
     @Test
@@ -475,6 +616,27 @@ public class SprintServiceTest {
 
         //then
         assertEquals(ISSUE_DOES_NOT_EXISTS, exception.getMessage());
+    }
+
+    private Sprint saveSprintWithIssue() {
+
+        Sprint sprint = sprintRepository.save(createSprintEntity(defaultScrumProject, Boolean.FALSE));
+        Issue issue = issueRepository.save(createIssueEntityWithSprint(sprint));
+        sprint.setSprintIssues(new HashSet<>(List.of(issue)));
+        return sprintRepository.save(sprint);
+    }
+
+    // the database keeps timestamps with microsecond precision
+    private static Instant now() {
+        return Instant.now().truncatedTo(ChronoUnit.MICROS);
+    }
+
+    private static void assertBetween(Instant from, Instant actual, Instant to) {
+
+        assertNotNull(actual);
+        Instant value = actual.truncatedTo(ChronoUnit.MICROS);
+        assertFalse(value.isBefore(from), () -> value + " is before " + from);
+        assertFalse(value.isAfter(to.plus(1, ChronoUnit.MICROS)), () -> value + " is after " + to);
     }
 
     private SprintWithIssues prepareSprintWithIssuesToStop() {

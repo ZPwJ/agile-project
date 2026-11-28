@@ -15,6 +15,7 @@ import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.tuple.Pair;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -25,6 +26,8 @@ import java.util.stream.Collectors;
 
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.ACTIVE_SPRINT_EXISTS;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.EMPTY_SPRINT;
+import static io.github.student.agile.exception.dictionary.ExceptionMessages.FINISHED_SPRINT_CANNOT_BE_EXTENDED;
+import static io.github.student.agile.exception.dictionary.ExceptionMessages.FINISHED_SPRINT_CANNOT_BE_STARTED;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.ISSUE_ALREADY_HAS_SPRINT;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.ISSUE_DOES_NOT_EXISTS;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.NO_ACTIVE_SPRINT_IN_PROJECT;
@@ -157,6 +160,9 @@ public class SprintServiceImpl implements SprintService {
                 .orElseThrow(() -> new RuntimeException(ISSUE_DOES_NOT_EXISTS));
         Sprint sprint = sprintRepository.findById(sprintID)
                 .orElseThrow(() -> new RuntimeException(SPRINT_DOES_NOT_EXISTS));
+        if (TRUE.equals(sprint.getIsDone())) {
+            throw new RuntimeException(FINISHED_SPRINT_CANNOT_BE_EXTENDED);
+        }
         if (!isNull(issue.getSprint())) {
             throw new RuntimeException(ISSUE_ALREADY_HAS_SPRINT);
         }
@@ -198,6 +204,10 @@ public class SprintServiceImpl implements SprintService {
         Sprint updated = sprintRepository.findById(ofNullable(sprintID).orElseThrow(NullIdentifierException::new))
                 .orElseThrow(() -> new IllegalArgumentException(SPRINT_DOES_NOT_EXISTS));
 
+        if (TRUE.equals(updated.getIsDone())) {
+            throw new RuntimeException(FINISHED_SPRINT_CANNOT_BE_STARTED);
+        }
+
         if(sprintRepository.findByActiveAndProject(TRUE, updated.getProject()).isPresent()) {
             throw new RuntimeException(ACTIVE_SPRINT_EXISTS);
         }
@@ -215,6 +225,7 @@ public class SprintServiceImpl implements SprintService {
             updated.setStartDate(ZonedDateTime.now());
         }
 
+        updated.setStartedAt(Instant.now());
         updated.setActive(TRUE);
         sprintRepository.save(updated);
     }
@@ -244,12 +255,10 @@ public class SprintServiceImpl implements SprintService {
         });
 
         updated.setSprintIssues(new HashSet<>());
-        sprintRepository.save(updated);
-
         updated.setActive(FALSE);
         updated.setIsDone(TRUE);
+        updated.setEndedAt(Instant.now());
         sprintRepository.save(updated);
-        sprintRepository.deleteById(updated.getId());
     }
 
     private Pair<Boolean, String> validateSprintDatesForStart(Sprint sprint) {

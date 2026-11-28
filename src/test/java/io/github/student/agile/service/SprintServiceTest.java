@@ -45,11 +45,13 @@ import static io.github.student.agile.builder.SprintBuilder.createSprint;
 import static io.github.student.agile.builder.SprintBuilder.createSprintEntity;
 import static io.github.student.agile.builder.UserBuilder.createCurrentLoggedInUser;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.ACTIVE_SPRINT_EXISTS;
+import static io.github.student.agile.exception.dictionary.ExceptionMessages.DONE_ISSUE_CANNOT_BE_ADDED_TO_SPRINT;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.EMPTY_SPRINT;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.FINISHED_SPRINT_CANNOT_BE_EXTENDED;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.FINISHED_SPRINT_CANNOT_BE_STARTED;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.ISSUE_ALREADY_HAS_SPRINT;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.ISSUE_DOES_NOT_EXISTS;
+import static io.github.student.agile.exception.dictionary.ExceptionMessages.ISSUE_FROM_ANOTHER_PROJECT;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.NO_ACTIVE_SPRINT_IN_PROJECT;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.PROJECT_DOES_NOT_EXISTS;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.SPRINT_DOES_NOT_EXISTS;
@@ -219,7 +221,7 @@ public class SprintServiceTest {
 
         //given
         Integer sprintID = sprintRepository.save(createSprintEntity(defaultScrumProject, Boolean.FALSE)).getId();
-        Integer issueID = issueRepository.save(createIssueEntity()).getId();
+        Integer issueID = issueRepository.save(createIssueOfProject(defaultScrumProject)).getId();
 
         //when
         sprintService.addIssueToSprint(issueID, sprintID);
@@ -269,6 +271,54 @@ public class SprintServiceTest {
 
         //then
         assertEquals(ISSUE_ALREADY_HAS_SPRINT, exception.getMessage());
+    }
+
+    @Test
+    public void addIssueToSprint_throwsIssueFromAnotherProjectExceptionTest() {
+
+        //given
+        Sprint sprint = sprintRepository.save(createSprintEntity(defaultScrumProject, Boolean.FALSE));
+        Project anotherProject = projectRepository.save(createProjectEntity());
+        Issue issue = issueRepository.save(createIssueOfProject(anotherProject));
+
+        //when
+        Exception exception = assertThrows(RuntimeException.class, () -> sprintService.addIssueToSprint(issue.getId(), sprint.getId()));
+
+        //then
+        assertEquals(ISSUE_FROM_ANOTHER_PROJECT, exception.getMessage());
+        assertNull(issue.getSprint());
+    }
+
+    @Test
+    public void addIssueToSprint_throwsWhenIssueHasNoProject() {
+
+        //given
+        Sprint sprint = sprintRepository.save(createSprintEntity(defaultScrumProject, Boolean.FALSE));
+        Issue issue = issueRepository.save(createIssueEntity());
+
+        //when
+        Exception exception = assertThrows(RuntimeException.class, () -> sprintService.addIssueToSprint(issue.getId(), sprint.getId()));
+
+        //then
+        assertEquals(ISSUE_FROM_ANOTHER_PROJECT, exception.getMessage());
+        assertNull(issue.getSprint());
+    }
+
+    @Test
+    public void addIssueToSprint_throwsDoneIssueCannotBeAddedExceptionTest() {
+
+        //given
+        Sprint sprint = sprintRepository.save(createSprintEntity(defaultScrumProject, Boolean.FALSE));
+        Issue doneIssue = createIssueOfProject(defaultScrumProject);
+        doneIssue.setIssueStatus(issueStatusRepository.findById(DONE.getStatusID()).orElseThrow());
+        issueRepository.save(doneIssue);
+
+        //when
+        Exception exception = assertThrows(RuntimeException.class, () -> sprintService.addIssueToSprint(doneIssue.getId(), sprint.getId()));
+
+        //then
+        assertEquals(DONE_ISSUE_CANNOT_BE_ADDED_TO_SPRINT, exception.getMessage());
+        assertNull(doneIssue.getSprint());
     }
 
     @Test
@@ -616,6 +666,13 @@ public class SprintServiceTest {
 
         //then
         assertEquals(ISSUE_DOES_NOT_EXISTS, exception.getMessage());
+    }
+
+    private static Issue createIssueOfProject(Project project) {
+
+        Issue issue = createIssueEntity();
+        issue.setProjectID(project.getId());
+        return issue;
     }
 
     private Sprint saveSprintWithIssue() {

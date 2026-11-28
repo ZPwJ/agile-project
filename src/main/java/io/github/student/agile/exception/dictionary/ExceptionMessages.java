@@ -19,6 +19,8 @@ public interface ExceptionMessages {
     String SPRINT_ALREADY_STARTED = "Given Sprint is lasting at this point of time";
     String FINISHED_SPRINT_CANNOT_BE_STARTED = "It is not allowed to start a finished sprint";
     String FINISHED_SPRINT_CANNOT_BE_EXTENDED = "It is not allowed to add an issue to a finished sprint";
+    String ISSUE_FROM_ANOTHER_PROJECT = "It is not allowed to add an issue from another project to the sprint";
+    String DONE_ISSUE_CANNOT_BE_ADDED_TO_SPRINT = "It is not allowed to add a done issue to a sprint";
     String NO_ACTIVE_SPRINT_IN_PROJECT = "There is no active sprint int the project";
     String ACTIVE_SPRINT_EXISTS = "There is already exists active sprint";
     String IMPOSSIBLE_ISSUE_STATUS_CHANGE_SPRINT_EMPTY = "Status change is impossible because issue is not within active sprint";

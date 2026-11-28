@@ -45,7 +45,9 @@ import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.D
 import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.IN_PROGRESS;
 import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.IN_TESTS;
 import static io.github.student.agile.resource.domain.dictionary.IssueStatusID.TO_DO;
+import static java.lang.Boolean.TRUE;
 import static java.util.Objects.isNull;
+import static java.util.Objects.nonNull;
 import static java.util.Optional.ofNullable;
 
 @Service
@@ -63,6 +65,7 @@ public class IssueServiceImpl implements IssueService{
     private final UserService userService;
     private final IssueDTOMapper issueDTOMapper;
     private final IssueGeneralDTOMapper issueGeneralDTOMapper;
+    private final SprintEventRecorder sprintEventRecorder;
 
     @Override
     public IssueDTO createIssue(IssueMRO issueDTO) {
@@ -146,6 +149,11 @@ public class IssueServiceImpl implements IssueService{
         Project project = projectRepository.findById(projectID)
                 .orElseThrow(() -> new RuntimeException(PROJECT_DOES_NOT_EXISTS));
 
+
+        Sprint sprint = issue.getSprint();
+        if (nonNull(sprint) && TRUE.equals(sprint.getActive())) {
+            sprintEventRecorder.recordRemoved(sprint.getId(), issue);
+        }
 
         Backlog backlog = project.getBacklog();
 
@@ -267,6 +275,10 @@ public class IssueServiceImpl implements IssueService{
         }
         updated.setIssueStatus(newStatus);
         issueRepository.save(updated);
+
+        if (DONE.getStatusID().equals(newStatus.getId())) {
+            sprintEventRecorder.recordCompleted(issueSprint.get().getId(), updated);
+        }
     }
 
     private boolean isStatusChangeFlowCorrect(IssueStatus current, IssueStatus changeRequested) {

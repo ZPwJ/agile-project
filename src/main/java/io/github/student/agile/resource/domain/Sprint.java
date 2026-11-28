@@ -17,6 +17,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.io.Serializable;
+import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.util.Set;
 
@@ -38,6 +39,10 @@ public class Sprint extends Auditable implements Serializable {
     private String name;
 
     private ZonedDateTime startDate;
+
+    private Instant startedAt;
+
+    private Instant endedAt;
 
     @ManyToOne
     @JoinColumn(name = "ProjectID", nullable = false)

@@ -15,18 +15,24 @@ import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.tuple.Pair;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.ACTIVE_SPRINT_EXISTS;
+import static io.github.student.agile.exception.dictionary.ExceptionMessages.DONE_ISSUE_CANNOT_BE_ADDED_TO_SPRINT;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.EMPTY_SPRINT;
+import static io.github.student.agile.exception.dictionary.ExceptionMessages.FINISHED_SPRINT_CANNOT_BE_EXTENDED;
+import static io.github.student.agile.exception.dictionary.ExceptionMessages.FINISHED_SPRINT_CANNOT_BE_STARTED;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.ISSUE_ALREADY_HAS_SPRINT;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.ISSUE_DOES_NOT_EXISTS;
+import static io.github.student.agile.exception.dictionary.ExceptionMessages.ISSUE_FROM_ANOTHER_PROJECT;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.NO_ACTIVE_SPRINT_IN_PROJECT;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.PROJECT_DOES_NOT_EXISTS;
 import static io.github.student.agile.exception.dictionary.ExceptionMessages.SPRINT_ALREADY_STARTED;
@@ -40,6 +46,7 @@ import static io.github.student.agile.utils.collection.CollectionsUtils.splitSet
 import static java.lang.Boolean.FALSE;
 import static java.lang.Boolean.TRUE;
 import static java.util.Objects.isNull;
+import static java.util.Objects.nonNull;
 import static java.util.Optional.ofNullable;
 
 @Service
@@ -54,6 +61,7 @@ public class SprintServiceImpl implements SprintService {
     private final ProjectRepository projectRepository;
     private final IssueStatusRepository issueStatusRepository;
     private final SprintDTOMapper sprintDTOMapper;
+    private final SprintEventRecorder sprintEventRecorder;
 
     @Override
     public SprintDTO getActiveSprint(Integer projectID) {
@@ -157,8 +165,17 @@ public class SprintServiceImpl implements SprintService {
                 .orElseThrow(() -> new RuntimeException(ISSUE_DOES_NOT_EXISTS));
         Sprint sprint = sprintRepository.findById(sprintID)
                 .orElseThrow(() -> new RuntimeException(SPRINT_DOES_NOT_EXISTS));
+        if (TRUE.equals(sprint.getIsDone())) {
+            throw new RuntimeException(FINISHED_SPRINT_CANNOT_BE_EXTENDED);
+        }
         if (!isNull(issue.getSprint())) {
             throw new RuntimeException(ISSUE_ALREADY_HAS_SPRINT);
+        }
+        if (!Objects.equals(issue.getProjectID(), sprint.getProject().getId())) {
+            throw new RuntimeException(ISSUE_FROM_ANOTHER_PROJECT);
+        }
+        if (nonNull(issue.getIssueStatus()) && DONE.getStatusID().equals(issue.getIssueStatus().getId())) {
+            throw new RuntimeException(DONE_ISSUE_CANNOT_BE_ADDED_TO_SPRINT);
         }
 
         Set<Issue> sprintIssues;
@@ -173,6 +190,10 @@ public class SprintServiceImpl implements SprintService {
 
         issue.setSprint(sprint);
         issueRepository.save(issue);
+
+        if (TRUE.equals(sprint.getActive())) {
+            sprintEventRecorder.recordAdded(sprint.getId(), issue);
+        }
     }
 
     @Override
@@ -183,6 +204,8 @@ public class SprintServiceImpl implements SprintService {
         Issue issue = issueRepository.findById(issueID)
                 .orElseThrow(() -> new RuntimeException(ISSUE_DOES_NOT_EXISTS));
 
+        Sprint currentSprint = issue.getSprint();
+
         Set<Issue> sprintIssues = sprint.getSprintIssues();
         sprintIssues.remove(issue);
         sprint.setSprintIssues(sprintIssues);
@@ -190,6 +213,10 @@ public class SprintServiceImpl implements SprintService {
 
         issue.setSprint(null);
         issueRepository.save(issue);
+
+        if (nonNull(currentSprint) && TRUE.equals(currentSprint.getActive())) {
+            sprintEventRecorder.recordRemoved(currentSprint.getId(), issue);
+        }
     }
 
     @Override
@@ -197,6 +224,10 @@ public class SprintServiceImpl implements SprintService {
 
         Sprint updated = sprintRepository.findById(ofNullable(sprintID).orElseThrow(NullIdentifierException::new))
                 .orElseThrow(() -> new IllegalArgumentException(SPRINT_DOES_NOT_EXISTS));
+
+        if (TRUE.equals(updated.getIsDone())) {
+            throw new RuntimeException(FINISHED_SPRINT_CANNOT_BE_STARTED);
+        }
 
         if(sprintRepository.findByActiveAndProject(TRUE, updated.getProject()).isPresent()) {
             throw new RuntimeException(ACTIVE_SPRINT_EXISTS);
@@ -215,8 +246,11 @@ public class SprintServiceImpl implements SprintService {
             updated.setStartDate(ZonedDateTime.now());
         }
 
+        Instant startedAt = Instant.now();
+        updated.setStartedAt(startedAt);
         updated.setActive(TRUE);
         sprintRepository.save(updated);
+        sprintEventRecorder.recordCommitted(updated.getId(), updated.getSprintIssues(), startedAt);
     }
 
     @Override
@@ -243,13 +277,12 @@ public class SprintServiceImpl implements SprintService {
             issueRepository.save(issue);
         });
 
+        // no sprint events here: endedAt closes the history of the sprint
         updated.setSprintIssues(new HashSet<>());
-        sprintRepository.save(updated);
-
         updated.setActive(FALSE);
         updated.setIsDone(TRUE);
+        updated.setEndedAt(Instant.now());
         sprintRepository.save(updated);
-        sprintRepository.deleteById(updated.getId());
     }
 
     private Pair<Boolean, String> validateSprintDatesForStart(Sprint sprint) {
